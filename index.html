@@ -1,0 +1,2581 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>常用纹理图案生成工具</title>
+<style>
+/* =====================================================================
+   工具类 UI 风格（Tool UI Style）· 共享基线样式表
+   两段基线原样拼接（baseline-1-tokens-and-panel.css → baseline-2-controls.css），
+   之后是本工具的专属布局与控件。令牌 / DOM / JS 约定见技能 ui-style-toolkit。
+   ===================================================================== */
+/* =====================================================================
+   工具类 UI 风格 · 共享基线样式表【第 1/2 段：设计令牌 + 面板骨架】
+   ---------------------------------------------------------------------
+   ⚠️ 本文件是拆成两段的（原文 11918 字符 > DSH 单次结果上限 8192）。
+      粘贴时必须【两段都粘、按 1 → 2 的顺序】，缺一段样式就不完整：
+        references/baseline-1-tokens-and-panel.css   ← 本文件
+        references/baseline-2-controls.css
+   ===================================================================== */
+/* =====================================================================
+   工具类 UI 风格（Tool UI Style）· 共享基线样式表（可直接粘贴）
+   提取自 ring-strands/index.html 与 particle-pointcloud/index.html 的 <style> 共同部分。
+   用法：整段放进新工具的 <style> 最前面，之后只写该项目的专属控件样式。
+   令牌含义 / DOM 约定 / JS 约定见 SKILL.md；改数值前先读 design-rationale.md。
+   ===================================================================== */
+
+  /* ============ 设计系统：单色阶（黑 / 白 / 灰），无彩色 ============
+     与 particle-pointcloud 保持同一套视觉语言：
+       选中态与主按钮 = 单色玻璃（半透明白纵向渐变 + 上沿高光 + 轻微投影），其上文字纯白。
+       滑块填充 = 实色 --hi（数值指示要一眼看清，不做玻璃）。
+       层级靠明度（--ink → --ink-4）与 1px 细线（--line）建立，不靠颜色。
+     唯一的例外是色块 / 预览内容本身，必须显色。 */
+
+  :root {
+    color-scheme: dark;
+    --ink:    #f5f5f5;              /* 主文字（高对比，不随高亮面一起调暗） */
+    --hi:     #bcbcbc;              /* 滑块已填充段 / 手柄：实色（数值指示需要最清晰） */
+    --glass-1: rgba(255,255,255,.28);  /* 玻璃上沿（受光面）→ 合成后 ≈ #515151 */
+    --glass-2: rgba(255,255,255,.16);  /* 玻璃中部 → ≈ #343434 */
+    --glass-3: rgba(255,255,255,.085); /* 玻璃下沿 → ≈ #222（几乎融进面板底色） */
+    --ink-2:  #9c9c9c;              /* 标签、次级文字 */
+    --ink-3:  #626262;              /* 说明文字、非激活图标 */
+    --ink-4:  #2e2e2e;              /* 滑轨已填充之外的部分 */
+    --line:   rgba(255,255,255,.10);/* 细分隔线 */
+    --line-2: rgba(255,255,255,.20);/* 控件描边 */
+    --panel:  rgba(10,10,10,.90);
+    --field:  #191919;              /* 输入框 / 分段控件底 */
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 100%; height: 100%; overflow: hidden; background: #000; color: var(--ink);
+    font: 12px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #app { position: fixed; inset: 0; }
+
+  #app canvas { display: block; }
+
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+
+  button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 1px solid var(--ink); outline-offset: 2px;
+  }
+
+  input[type=range]:focus-visible { outline: none; }
+
+  input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px rgba(255,255,255,.28); }
+
+  input[type=range]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px rgba(255,255,255,.28); }
+
+  /* ---- 控制面板（左：取色 / 右：3D 参数）---- */
+
+  .panel {
+    position: fixed; top: 14px; z-index: 20; width: 286px;
+    max-height: calc(100vh - 28px); overflow-y: auto; overscroll-behavior: contain;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    box-shadow: 0 18px 50px rgba(0,0,0,.55);
+    transition: opacity .2s ease, transform .25s ease;
+  }
+
+  .panel.hidden { opacity: 0; pointer-events: none; }
+
+  .panel::-webkit-scrollbar { width: 9px; }
+
+  .panel::-webkit-scrollbar-track { background: transparent; }
+
+  .panel::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,.16); border-radius: 5px;
+    border: 3px solid transparent; background-clip: content-box;
+  }
+
+  .panel::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.3); background-clip: content-box; }
+
+  .p-head {
+    position: sticky; top: 0; z-index: 2;
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+    padding: 13px 14px 11px; border-bottom: 1px solid var(--line);
+    background: var(--panel); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  }
+
+  .p-head .head-actions { display: flex; flex: none; align-items: center; gap: 8px; }
+
+  .p-head h1 { font-size: 13px; font-weight: 600; letter-spacing: .05em; }
+
+  .p-head .p-sub { margin-top: 2px; font-size: 10px; color: var(--ink-3); letter-spacing: .06em; }
+
+  .icon-btn {
+    flex: none; width: 24px; height: 24px; border: 1px solid var(--line); border-radius: 6px;
+    color: var(--ink-2); line-height: 1;
+    display: flex; align-items: center; justify-content: center; transition: .15s;
+  }
+
+  .icon-btn:hover { border-color: var(--line-2); color: var(--ink); background: rgba(255,255,255,.07); }
+
+  /* ---- 分组（details）：同类功能收在一组 ---- */
+
+  .group { border-bottom: 1px solid var(--line); }
+
+  .group:last-child { border-bottom: 0; }
+
+  .group > summary {
+    list-style: none; cursor: pointer; user-select: none;
+    display: flex; align-items: center; gap: 9px; padding: 9px 14px;
+    color: var(--ink-2); transition: color .15s;
+  }
+
+  .group > summary::-webkit-details-marker { display: none; }
+
+  .group > summary:hover { color: var(--ink); }
+
+  .group[open] > summary { color: var(--ink); }
+
+  .g-no { font-size: 10px; color: var(--ink-3); letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+
+  .g-name { flex: 1; font-size: 11.5px; letter-spacing: .08em; }
+
+  .g-chev {
+    width: 6px; height: 6px; margin: -3px 3px 0 0; opacity: .65;
+    border-right: 1px solid currentColor; border-bottom: 1px solid currentColor;
+    transform: rotate(45deg); transition: transform .2s ease;
+  }
+
+  .group[open] .g-chev { transform: rotate(-135deg); margin-top: 3px; }
+
+  .g-body { display: flex; flex-direction: column; gap: 9px; padding: 1px 14px 13px; }
+
+  .divider { height: 1px; background: var(--line); margin: 2px 0 0; }
+
+  .sub-label { font-size: 10px; color: var(--ink-3); letter-spacing: .08em; }
+
+  .sub-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+
+  /* ---- 控制行 ---- */
+
+  .ctl { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+
+  .ctl-head { display: flex; align-items: baseline; justify-content: flex-start; gap: 8px; }
+
+  .ctl-head .k { font-size: 11px; color: var(--ink-2); letter-spacing: .02em; }
+
+  .ctl-head .k2 { font-size: 10px; color: var(--ink-3); }
+
+  .ctl-head .v { margin-left: auto; font-size: 11px; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+  /* 重置按钮：紧贴参数名，平时几乎看不见、悬停才显形；已在默认值上时更淡且不可点 */
+
+  .ctl-head .rv {
+    align-self: center; flex: none; margin-left: -5px;
+    width: 15px; height: 15px; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid transparent; border-radius: 50%; background: none;
+    color: var(--ink-3); font-size: 10px; line-height: 1; cursor: pointer;
+    opacity: .4; transition: opacity .18s ease, color .18s ease, border-color .18s ease;
+  }
+
+  .ctl-head .rv:hover { opacity: 1; color: var(--ink); border-color: var(--line-2); }
+
+  .ctl-head .rv.at-default { opacity: .12; pointer-events: none; }
+
+  .note { font-size: 10.5px; color: var(--ink-3); line-height: 1.55; }
+
+  .row2 { display: flex; align-items: flex-end; gap: 8px; }
+
+/* =====================================================================
+   工具类 UI 风格 · 共享基线样式表【第 2/2 段：控件】
+   ---------------------------------------------------------------------
+   接在 baseline-1-tokens-and-panel.css 之后。
+   本段含：滑块 · 数字/颜色输入 · 下拉 · 分段控件 · 按钮 · 单色玻璃 · 素材信息 · 唤出按钮
+   ===================================================================== */
+  /* ---- 滑块：白色已填充轨道 = 唯一强调 ----
+     注意：--fill 不在此定义（也无须在 :root 里定义）——它由 JS 的 paintRange()
+     在运行时写进元素 inline style，CSS 里的 50% 只是兜底。
+     任何改值路径（拖拽 input / 程序化 setRange / ↺ 重置 / URL 参数覆盖）都必须调它，
+     否则会出现"数值变了、滑杆没动"。 */
+
+  input[type=range] {
+    -webkit-appearance: none; appearance: none;
+    display: block; width: 100%; height: 10px; background: none; cursor: ew-resize;
+  }
+
+  input[type=range]::-webkit-slider-runnable-track {
+    height: 2px; border-radius: 1px;
+    background: linear-gradient(to right,
+      var(--hi) 0, var(--hi) var(--fill, 50%), var(--ink-4) var(--fill, 50%), var(--ink-4) 100%);
+  }
+
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 10px; height: 10px; margin-top: -4px;
+    border: 0; border-radius: 50%; background: var(--hi); transition: transform .12s ease;
+  }
+
+  input[type=range]:hover::-webkit-slider-thumb { transform: scale(1.2); }
+
+  input[type=range]:active::-webkit-slider-thumb { transform: scale(1.35); }
+
+  input[type=range]::-moz-range-track { height: 2px; border-radius: 1px; background: var(--ink-4); }
+
+  input[type=range]::-moz-range-progress { height: 2px; border-radius: 1px; background: var(--hi); }
+
+  input[type=range]::-moz-range-thumb { width: 10px; height: 10px; border: 0; border-radius: 50%; background: var(--hi); }
+
+  input[type=range]:disabled { opacity: .3; cursor: not-allowed; }
+
+  input[type=range]:disabled::-webkit-slider-thumb { transform: none; }
+
+  /* ---- 数字输入 / 颜色输入 ---- */
+
+  input[type=number] {
+    width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--field); color: var(--ink); font: inherit; font-size: 11px;
+    text-align: center; font-variant-numeric: tabular-nums; -moz-appearance: textfield;
+  }
+
+  input[type=number]:focus { border-color: var(--line-2); }
+
+  input[type=color] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 30px; padding: 2px; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--field); cursor: pointer;
+  }
+
+  input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+
+  input[type=color]::-webkit-color-swatch { border: none; border-radius: 4px; }
+
+  /* ---- 下拉（选项 ≥3 时使用；形状/形态改用分段控件，下拉仅作兼容/无障碍后备）---- */
+
+  select {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; padding: 6px 26px 6px 9px; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--field) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='9' viewBox='0 0 9 9'%3E%3Cpath d='M1.5 3.5 4.5 6.5 7.5 3.5' fill='none' stroke='%239c9c9c' stroke-width='1.1' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 9px center;
+    color: var(--ink); font: inherit; font-size: 11px;
+  }
+
+  select:hover { border-color: var(--line-2); }
+
+  select[hidden] { display: none; }
+
+  /* ---- 分段控件：2~3 个互斥选项，替代下拉，统一形态 ---- */
+
+  .seg { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 7px; background: var(--field); }
+
+  .seg > button {
+    flex: 1; min-width: 0; padding: 4px 2px; border-radius: 5px;
+    font-size: 11px; color: var(--ink-2); white-space: nowrap; transition: .15s;
+  }
+
+  .seg > button:hover { color: var(--ink); }
+
+  /* ---- 按钮 ---- */
+
+  .btn {
+    width: 100%; padding: 7px 10px; border: 1px solid var(--line-2); border-radius: 7px;
+    color: var(--ink); font-size: 11.5px; letter-spacing: .04em;
+    display: flex; align-items: center; justify-content: center; gap: 7px; transition: .15s;
+  }
+
+  .btn:hover { background: rgba(255,255,255,.08); }
+
+  .btn:active { background: rgba(255,255,255,.14); }
+
+  .btn:disabled { opacity: .3; cursor: not-allowed; }
+
+  .btn:disabled:hover { background: none; }
+
+  .btnrow { display: flex; gap: 6px; }
+
+  .btnrow .btn { flex: 1; }
+
+  /* ---- 选中态 / 主按钮：单色玻璃 ---- */
+
+  .seg > button[aria-pressed="true"],
+
+  .seg > button[aria-pressed="true"]:active,
+
+  .btn.primary {
+    background: linear-gradient(180deg, var(--glass-1) 0%, var(--glass-2) 55%, var(--glass-3) 100%);
+    border-color: rgba(255,255,255,.22);
+    color: #fff;
+    font-weight: 600;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.26),
+                inset 0 -1px 0 rgba(0,0,0,.35),
+                0 1px 2px rgba(0,0,0,.35);
+  }
+
+  .btn.primary:hover {
+    background: linear-gradient(180deg, rgba(255,255,255,.36) 0%, rgba(255,255,255,.21) 55%, rgba(255,255,255,.11) 100%);
+  }
+
+  /* ---- 素材信息：键值对齐 ---- */
+
+  .info { display: flex; flex-direction: column; gap: 5px; font-size: 11px; }
+
+  .info .li { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+
+  .info .li .k { color: var(--ink-3); }
+
+  .info .li .v { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+  .info .note { margin-top: 1px; }
+
+  /* 半调上传：长文件名不挤压「图片」标签 */
+  #vImg { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* "回到中心"：默认不占位，中心被平移偏离后才淡入 */
+
+  .btn.recenter { display: none; }
+
+  .btn.recenter.show { display: flex; animation: recenter-in .18s ease; }
+
+  @keyframes recenter-in { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+
+  /* ---- 面板收起后的唤出按钮 ---- */
+
+  #toggleBtn {
+    position: fixed; top: 14px; right: 14px; z-index: 21; padding: 7px 12px;
+    border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    color: var(--ink-2); font-size: 11px; letter-spacing: .08em;
+    opacity: 0; pointer-events: none; transition: .2s ease;
+  }
+
+  #toggleBtn.show { opacity: 1; pointer-events: auto; }
+
+  #toggleBtn:hover { color: var(--ink); border-color: var(--ink); }
+
+  /* ================= 本工具专属：左图案库 / 中画布 / 右参数 ================= */
+
+  #app { position: fixed; inset: 0; }
+
+  #stage {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    padding: 38px 320px 38px 292px;
+    transition: padding .25s ease;
+  }
+
+  body.panels-hidden #stage { padding: 38px 14px; }
+
+  /* 画布：正方形、居中；棋盘底只在透明背景时露出来 */
+  #canvasWrap {
+    position: relative; width: min(100%, calc(100vh - 76px)); aspect-ratio: 1 / 1; line-height: 0;
+    box-shadow: 0 0 0 1px rgba(255,255,255,.12), 0 26px 70px rgba(0,0,0,.7);
+    background:
+      linear-gradient(45deg, #141414 25%, transparent 25%, transparent 75%, #141414 75%) 0 0 / 16px 16px,
+      linear-gradient(45deg, #141414 25%, transparent 25%, transparent 75%, #141414 75%) 8px 8px / 16px 16px,
+      #0b0b0b;
+  }
+
+  #canvasBox { display: block; width: 100%; height: 100%; }
+  #canvasBox svg { display: block; width: 100%; height: 100%; }
+  body.zooming #canvasWrap { cursor: zoom-in; }
+
+  /* 画布下方只读信息 */
+  #hud {
+    position: fixed; left: 50%; bottom: 13px; z-index: 15; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 8px; pointer-events: none; white-space: nowrap;
+  }
+  #badge, #tileInfo {
+    padding: 4px 9px; border: 1px solid var(--line); border-radius: 6px;
+    background: rgba(10,10,10,.72); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    font-size: 10.5px; color: var(--ink-3); letter-spacing: .03em;
+  }
+  #badge b { color: var(--ink); font-weight: 500; }
+  #badge span { margin-left: 8px; font-variant-numeric: tabular-nums; }
+
+  /* 左栏：图案库 */
+  .panel.left {
+    left: 14px; right: auto; width: 264px;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .panel.left .p-head { flex: none; }
+  .lib-body { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 8px 14px; }
+  .lib-body::-webkit-scrollbar { width: 9px; }
+  .lib-body::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,.16); border-radius: 5px;
+    border: 3px solid transparent; background-clip: content-box;
+  }
+  .search {
+    width: 100%; margin-bottom: 5px; padding: 6px 9px;
+    border: 1px solid var(--line); border-radius: 6px;
+    background: var(--field); color: var(--ink);
+    font: inherit; font-size: 11px;
+  }
+  .search::placeholder { color: var(--ink-3); }
+  .search:focus { outline: none; border-color: var(--line-2); }
+  .lib-group { margin-bottom: 10px; }
+  .lib-cat {
+    display: flex; align-items: baseline; gap: 7px;
+    padding: 7px 9px 5px; border-bottom: 1px solid var(--line); margin-bottom: 4px;
+  }
+  .lib-cat .no { font-size: 10px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .lib-cat b { font-size: 11px; font-weight: 600; letter-spacing: .08em; color: var(--ink-2); }
+  .lib-cat em { margin-left: auto; font-style: normal; font-size: 9px; letter-spacing: .12em; color: var(--ink-3); }
+  .lib-item {
+    /* 1.5px 边框（对齐 ui-color-lab.afdesign 的选中态描边厚度）；padding 各减 0.5px，
+       外框尺寸与 1px 边框时完全一致，不会让列表整体位移 */
+    display: flex; align-items: center; gap: 8px; width: 100%; padding: 5.5px 8.5px;
+    border: 1.5px solid transparent; border-radius: 6px; background: none;
+    color: var(--ink-2); font: inherit; font-size: 11.5px; text-align: left;
+    transition: .15s; cursor: pointer;
+  }
+  .lib-item:hover { background: rgba(255,255,255,.06); color: var(--ink); }
+  .lib-item .dot { width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: .35; flex: none; }
+  /* 选中态：蓝色渐变玻璃（按 ui-color-lab.afdesign 的选中态逐像素反解）
+     —— 沿用户稿的描边与填充各取 5 个采样点，色值是「叠在 #0A0A0A 面板底色之上」的最终色，
+        所以这里直接用不透明色写死（工具背景是固定的深灰，不需要半透明）。
+     —— 描边：左端 #0339EF（接近纯 #003BEE）→ 20% #1435A7 → 52% #243F7C →
+        82% #2C3159 → 右端 #3C4467（哑光石板蓝）。就是稿子里「左亮右哑」的效果。
+     —— 填充：同一方向同步变淡 #052376 → #192240 → #111219。
+     —— 厚度 1.5px（稿子里约 1.9px @ 行高 33px；本工具行高 29px，按比例取 1.5px）。
+     注意：两层背景都是不透明色 —— 如果填充用半透明，底层的描边渐变会从填充里透出来，
+     反而把整块填充染蓝（上一版 80% 的「太硬」就是这么来的）。
+     padding-box / border-box 双层背景是「渐变描边」的标准写法（边框透明才透出底层）。 */
+  .lib-item[aria-current="true"] {
+    background:
+      linear-gradient(90deg,
+        #052376 0%,
+        #13255e 25%,
+        #192240 50%,
+        #161a2b 75%,
+        #111219 100%) padding-box,
+      linear-gradient(90deg,
+        #0339ef 0%,
+        #1435a7 20%,
+        #243f7c 52%,
+        #2c3159 82%,
+        #3c4467 100%) border-box;
+    border-color: transparent;
+    color: #fff; font-weight: 600;
+    text-shadow: 0 1px 2px rgba(0,10,40,.32);
+    box-shadow:
+      0 0 12px rgba(20,70,240,.16),
+      0 0 26px rgba(20,70,240,.07);
+  }
+  .lib-item[aria-current="true"] .dot { opacity: 1; }
+  .lib-empty { padding: 16px 9px; font-size: 10.5px; color: var(--ink-3); line-height: 1.6; }
+
+  /* 右栏：参数 */
+  .panel.right { right: 14px; left: auto; width: 286px; }
+  .p-title { font-size: 12.5px; font-weight: 600; letter-spacing: .05em; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .p-head h1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* 英文标题（Texture Pattern Generator）比中文长：允许换行、不截断品牌名；
+     与 particle-collage / particle-pointcloud 的长英文标题表现一致。中文仍保持单行。 */
+  html[lang="en"] .p-head h1 { white-space: normal; overflow: visible; letter-spacing: .005em; }
+  /* 语言开关：与其它分段控件同形态，只是更窄。58px 是粒子项目的宽度，本工具左栏只有 264px
+     （粒子项目 286），收窄到 48px 才能让「PARAMETRIC · SEAMLESS · SVG」保持单行。 */
+  .lang-seg { flex: none; width: 48px; }
+  /* 副标题是装饰性说明：放不下就省略号，不换行把面板头撑高 */
+  .p-head .p-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lang-seg > button { padding: 3px 0; font-size: 10px; letter-spacing: .02em; }
+
+  .ctl .range-row { display: flex; align-items: center; gap: 6px; }
+
+  /* 取色行：色块 + HEX 读数 */
+  .ctl.color input[type=color] { height: 30px; }
+  .ctl .v.hex { font-size: 10.5px; color: var(--ink-2); letter-spacing: .04em; }
+  .ctl .note + .ctl { margin-top: 0; }
+
+  /* 面板隐藏 / 唤回 */
+  body.panels-hidden .panel { opacity: 0; pointer-events: none; visibility: hidden; }
+  #toggleBtn {
+    position: fixed; top: 14px; right: 14px; z-index: 21; padding: 7px 12px;
+    border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    color: var(--ink-2); font-size: 11px; letter-spacing: .08em;
+    opacity: 0; pointer-events: none; visibility: hidden; transition: .2s ease;
+  }
+  #toggleBtn.show { opacity: 1; pointer-events: auto; visibility: visible; }
+  #toggleBtn:hover { color: var(--ink); border-color: var(--ink); }
+
+  /* Toast：单色玻璃，不用彩色 */
+  #toast {
+    position: fixed; left: 50%; bottom: 54px; z-index: 40;
+    transform: translateX(-50%) translateY(8px);
+    padding: 7px 14px; border: 1px solid rgba(255,255,255,.22); border-radius: 8px;
+    background: linear-gradient(180deg, var(--glass-1) 0%, var(--glass-2) 55%, var(--glass-3) 100%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.26), 0 1px 2px rgba(0,0,0,.35);
+    color: #fff; font-size: 11px; letter-spacing: .04em;
+    opacity: 0; pointer-events: none; transition: .2s ease; white-space: nowrap;
+  }
+  #toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* 说明区在底部时的收尾 */
+  .g-body .note:last-child { margin-bottom: 1px; }
+  .btns { display: flex; flex-direction: column; gap: 6px; }
+
+  /* 窄屏：面板收窄，画布让位（桌面工具，不做移动端重排） */
+  @media (max-width: 1180px) {
+    #stage { padding: 28px 296px 28px 268px; }
+    .panel.left { width: 244px; }
+  }
+  @media (max-width: 980px) {
+    #stage { padding: 22px 276px 22px 238px; }
+    .panel.left { width: 224px; }
+    .panel.right { width: 262px; }
+    .p-head h1 { font-size: 12px; }
+    #hud { gap: 6px; }
+    #tileInfo { display: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 语言真值源：视觉上的 #segLang 只是它的外观（与 particle-collage 同一套 bindSeg） -->
+<select id="lang" hidden>
+  <option value="zh">中文</option>
+  <option value="en">English</option>
+</select>
+
+<div id="app">
+  <main id="stage" aria-label="图案预览" data-i18n-aria="aStage">
+    <div id="canvasWrap"><div id="canvasBox"></div></div>
+    <div id="hud">
+      <div id="badge"></div>
+      <div id="tileInfo"></div>
+    </div>
+  </main>
+
+  <aside class="panel left" id="panelL" aria-label="图案库" data-i18n-aria="aPanelLib">
+    <div class="p-head">
+      <div style="min-width:0">
+        <h1 data-i18n="appTitle">常用纹理图案生成工具</h1>
+        <div class="p-sub">PARAMETRIC · SEAMLESS · SVG</div>
+      </div>
+      <div class="head-actions">
+        <div class="seg lang-seg" id="segLang" role="group" aria-label="语言 / Language" data-i18n-aria="langLabel">
+          <button type="button" data-val="zh" aria-pressed="true" title="中文">中</button>
+          <button type="button" data-val="en" aria-pressed="false" title="English">EN</button>
+        </div>
+      </div>
+    </div>
+    <div class="lib-body">
+      <input id="libSearch" class="search" type="search" placeholder="搜索图案 / 分类…" autocomplete="off" aria-label="搜索图案" data-i18n-ph="phSearch" data-i18n-aria="aSearch">
+      <div id="libList"></div>
+    </div>
+  </aside>
+
+  <aside class="panel right" id="panelR" aria-label="参数面板" data-i18n-aria="aPanelParams">
+    <div class="p-head">
+      <div style="min-width:0">
+        <div class="p-title" id="curName">—</div>
+        <div class="p-sub" id="curCat">—</div>
+      </div>
+      <div class="head-actions">
+        <button class="icon-btn" id="resetAll" type="button" title="复位当前图案全部参数" aria-label="复位当前图案全部参数" data-i18n-title="tResetAll" data-i18n-aria="tResetAll">↺</button>
+        <button class="icon-btn" id="hidePanels" type="button" title="隐藏面板（H）" aria-label="隐藏面板" data-i18n-title="tHidePanels" data-i18n-aria="aHidePanels">−</button>
+      </div>
+    </div>
+
+    <details class="group" data-g="params" open>
+      <summary><span class="g-no">01</span><span class="g-name" data-i18n="gParams">图案参数</span><span class="g-chev"></span></summary>
+      <div class="g-body" id="params"></div>
+    </details>
+
+    <details class="group" data-g="colors" open>
+      <summary><span class="g-no">02</span><span class="g-name" data-i18n="gColors">配色</span><span class="g-chev"></span></summary>
+      <div class="g-body">
+        <div class="ctl color">
+          <div class="ctl-head"><span class="k" data-i18n="lBgColor">背景色</span><button type="button" class="rv" id="rvBg" title="复位到默认黑底" data-i18n-title="tResetBg">↺</button><span class="v hex" id="vBg">#000000</span></div>
+          <input type="color" id="bgColor" value="#000000" aria-label="背景色" data-i18n-aria="lBgColor">
+        </div>
+        <div class="ctl color">
+          <div class="ctl-head"><span class="k" data-i18n="lFgColor">图案色</span><button type="button" class="rv" id="rvFg" title="复位到默认 #A8B7FF" data-i18n-title="tResetFg">↺</button><span class="v hex" id="vFg">#A8B7FF</span></div>
+          <input type="color" id="fgColor" value="#a8b7ff" aria-label="图案色" data-i18n-aria="lFgColor">
+        </div>
+        <div class="ctl">
+          <div class="ctl-head"><span class="k" data-i18n="lBg">背景</span><button type="button" class="rv" id="rvTrans" title="复位为不透明" data-i18n-title="tResetTrans">↺</button></div>
+          <div class="seg" id="segTrans" role="group" aria-label="背景透明度" data-i18n-aria="aTrans">
+            <button type="button" data-val="0" aria-pressed="true" data-i18n="oOpaque">不透明</button>
+            <button type="button" data-val="1" aria-pressed="false" data-i18n="oTransparent">透明</button>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <details class="group" data-g="canvas" open>
+      <summary><span class="g-no">03</span><span class="g-name" data-i18n="gExport">预览与导出</span><span class="g-chev"></span></summary>
+      <div class="g-body">
+        <div class="ctl">
+          <div class="ctl-head"><span class="k" data-i18n="lSize">导出尺寸</span><button type="button" class="rv" id="rvSize" title="复位到 1024" data-i18n-title="tResetSize">↺</button><span class="v" id="vSize">1024 px</span></div>
+          <select id="sizeSel" aria-label="导出尺寸" data-i18n-aria="aSize">
+            <option value="512">512 × 512</option>
+            <option value="1024" selected>1024 × 1024</option>
+            <option value="2048">2048 × 2048</option>
+            <option value="4096">4096 × 4096</option>
+          </select>
+        </div>
+
+        <button class="btn primary" id="expSvg" type="button" data-i18n="btnExpSvg">导出 SVG（矢量）</button>
+        <div class="btnrow"><button class="btn" id="expPng" type="button" data-i18n="btnExpPng">导出 PNG</button></div>
+      </div>
+    </details>
+  </aside>
+
+  <button id="toggleBtn" type="button" data-i18n="panelChip">显示面板</button>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+/* ============================================================
+   常用纹理图案生成工具
+   架构：每个图案返回一个「四方连续平铺单元」(tile)，整幅画布由
+        SVG <pattern> 平铺该单元生成。好处：
+        · 导出 SVG 极小、且在任何矢量软件里都能无缝平铺使用
+        · 预览渲染开销与图案密度无关
+        · 参数变化只需重算一个 tile
+   ============================================================ */
+
+/* ---------------- 基础工具 ---------------- */
+const f = n => { const v = Math.round(n * 100) / 100; return v === 0 ? 0 : v; };
+/** 周期尺寸用更高精度：tile 宽高若取整到 2 位小数，超大尺寸渲染会累积亚像素接缝 */
+const f6 = n => { const v = Math.round(n * 1e6) / 1e6; return v === 0 ? 0 : v; };
+const rad = d => d * Math.PI / 180;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+/** 环绕偏移：元素落在 tile 边界上时，需要在对面补绘，才能无缝拼接 */
+function wrapOffsets(x, y, rx, ry, w, h) {
+  const dxs = [0], dys = [0], EPS = 1e-6;
+  if (x - rx < -EPS) dxs.push(w);
+  if (x + rx > w + EPS) dxs.push(-w);
+  if (y - ry < -EPS) dys.push(h);
+  if (y + ry > h + EPS) dys.push(-h);
+  const out = [];
+  for (const dx of dxs) for (const dy of dys) out.push([dx, dy]);
+  return out;
+}
+
+/** 半平面裁剪：保留 fn(p) >= 0 的部分 */
+function clipHalf(pts, fn) {
+  const out = [];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    const fa = fn(a), fb = fn(b);
+    if (fa >= 0) out.push(a);
+    if ((fa >= 0) !== (fb >= 0)) {
+      const t = fa / (fa - fb);
+      out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+    }
+  }
+  return out;
+}
+
+/** 把多边形裁剪到 [0,w]×[0,h] */
+function clipRect(pts, w, h) {
+  let p = pts;
+  p = clipHalf(p, a => a.x);
+  if (!p.length) return p;
+  p = clipHalf(p, a => w - a.x);
+  if (!p.length) return p;
+  p = clipHalf(p, a => a.y);
+  if (!p.length) return p;
+  p = clipHalf(p, a => h - a.y);
+  return p;
+}
+
+const polyPath = (pts, fill, stroke, sw) => {
+  if (pts.length < 3) return '';
+  let d = 'M' + f(pts[0].x) + ' ' + f(pts[0].y);
+  for (let i = 1; i < pts.length; i++) d += 'L' + f(pts[i].x) + ' ' + f(pts[i].y);
+  d += 'Z';
+  return `<path d="${d}" fill="${fill}"${stroke ? ` stroke="${stroke}" stroke-width="${f(sw)}"` : ''}/>`;
+};
+
+const linePath = (pts, stroke, sw, cap) => {
+  if (pts.length < 2) return '';
+  let d = 'M' + f(pts[0].x) + ' ' + f(pts[0].y);
+  for (let i = 1; i < pts.length; i++) d += 'L' + f(pts[i].x) + ' ' + f(pts[i].y);
+  return `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${f(sw)}"${cap ? ` stroke-linecap="${cap}"` : ''}/>`;
+};
+
+const line = (x1, y1, x2, y2, stroke, sw) =>
+  `<line x1="${f(x1)}" y1="${f(y1)}" x2="${f(x2)}" y2="${f(y2)}" stroke="${stroke}" stroke-width="${f(sw)}"/>`;
+
+const circle = (x, y, r, fill, stroke, sw) =>
+  `<circle cx="${f(x)}" cy="${f(y)}" r="${f(r)}" fill="${fill}"${stroke ? ` stroke="${stroke}" stroke-width="${f(sw)}"` : ''}/>`;
+
+const rect = (x, y, w, h, fill) =>
+  `<rect x="${f(x)}" y="${f(y)}" width="${f(w)}" height="${f(h)}" fill="${fill}"/>`;
+
+/** 确定性伪随机（同一种子永远得到同一结果） */
+function rng(seed) {
+  let s = (seed * 9301 + 49297) % 233280 || 1;
+  return () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+}
+
+/** 按形状画一个「点」。op 可选：0~1 的明度/不透明度（用于「随机明度」） */
+function dot(x, y, r, shape, fill, op) {
+  if (r <= 0.02) return '';
+  let s;
+  switch (shape) {
+    case 'square':
+      s = rect(x - r, y - r, r * 2, r * 2, fill);
+      break;
+    case 'diamond':
+      s = polyPath([{ x, y: y - r }, { x: x + r, y }, { x, y: y + r }, { x: x - r, y }], fill);
+      break;
+    case 'cross': {
+      const a = r * 0.3;
+      s = `<path d="M${f(x - a)} ${f(y - r)}H${f(x + a)}V${f(y - a)}H${f(x + r)}V${f(y + a)}H${f(x + a)}V${f(y + r)}H${f(x - a)}V${f(y + a)}H${f(x - r)}V${f(y - a)}H${f(x - a)}Z" fill="${fill}"/>`;
+      break;
+    }
+    case 'ring':
+      s = circle(x, y, r, 'none', fill, Math.max(0.4, r * 0.34));
+      break;
+    case 'plus': {
+      const a = r * 0.26, b = r;
+      s = `<path d="M${f(x - a)} ${f(y - b)}H${f(x + a)}V${f(y - a)}H${f(x + b)}V${f(y + a)}H${f(x + a)}V${f(y + b)}H${f(x - a)}V${f(y + a)}H${f(x - b)}V${f(y - a)}H${f(x - a)}Z" fill="${fill}"/>`;
+      break;
+    }
+    default:
+      s = circle(x, y, r, fill);
+  }
+  if (op == null || op >= 0.999) return s;
+  return `<g opacity="${f(clamp(op, 0, 1))}">${s}</g>`;
+}
+
+/* ---------------- 互锁铺砌工具（埃舍尔式） ----------------
+   核心思想：相邻图块必须共用同一条边界曲线。
+   只要满足这一条，整幅画布就被图形严丝合缝地铺满
+   （无缝隙、无重叠、可无限重复）——这是结构性保证，不靠后期修边。
+   --------------------------------------------------- */
+
+/** 点序列 → SVG path */
+function pathFrom(pts, fill, stroke, sw, close) {
+  if (!pts || pts.length < 2) return '';
+  let d = 'M' + f(pts[0].x) + ' ' + f(pts[0].y);
+  for (let i = 1; i < pts.length; i++) d += 'L' + f(pts[i].x) + ' ' + f(pts[i].y);
+  if (close !== false) d += 'Z';
+  return `<path d="${d}" fill="${fill}"${stroke ? ` stroke="${stroke}" stroke-width="${f(sw)}" stroke-linejoin="round"` : ''}/>`;
+}
+
+/** 实心图形：用同色描边盖住相邻图形贴合处的抗锯齿细缝 */
+const solidShape = (pts, col, sw) => pathFrom(pts, col, col, Math.max(0.4, sw));
+
+function bboxOf(pts) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const p of pts) {
+    if (p.x < x0) x0 = p.x;
+    if (p.x > x1) x1 = p.x;
+    if (p.y < y0) y0 = p.y;
+    if (p.y > y1) y1 = p.y;
+  }
+  return { x0, y0, x1, y1 };
+}
+
+/** 图形超出 tile 边界时，需要补绘到对面的格偏移（否则平铺会出现缺口） */
+function latticeOffsets(bb, w, h) {
+  const out = [];
+  const i0 = Math.floor((0 - bb.x1) / w) - 1, i1 = Math.ceil((w - bb.x0) / w) + 1;
+  const j0 = Math.floor((0 - bb.y1) / h) - 1, j1 = Math.ceil((h - bb.y0) / h) + 1;
+  for (let i = i0; i <= i1; i++) {
+    for (let j = j0; j <= j1; j++) {
+      const x0 = bb.x0 + i * w, x1 = bb.x1 + i * w;
+      const y0 = bb.y0 + j * h, y1 = bb.y1 + j * h;
+      if (x1 > 1e-6 && x0 < w - 1e-6 && y1 > 1e-6 && y0 < h - 1e-6) out.push([i * w, j * h]);
+    }
+  }
+  return out;
+}
+
+/** 多边形面积（逆时针为正）——用于验证铺砌无缝隙、无重叠 */
+function polyArea(pts) {
+  let a = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i], q = pts[(i + 1) % pts.length];
+    a += p.x * q.y - q.x * p.y;
+  }
+  return a / 2;
+}
+
+/** 凸多边形向内收缩 g（用于留出砖缝：缝里透出的是背景，不依赖描边颜色） */
+function insetPoly(pts, g) {
+  const n = pts.length;
+  if (g <= 0 || n < 3) return pts;
+  const sgn = polyArea(pts) > 0 ? 1 : -1;
+  const ln = [];
+  for (let i = 0; i < n; i++) {
+    const a = pts[i], b = pts[(i + 1) % n];
+    const ex = b.x - a.x, ey = b.y - a.y, L = Math.hypot(ex, ey) || 1;
+    ln.push({ a, d: { x: ex, y: ey }, nx: sgn * ey / L, ny: -sgn * ex / L });
+  }
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const L1 = ln[(i - 1 + n) % n], L2 = ln[i];
+    const p1 = { x: L1.a.x - L1.nx * g, y: L1.a.y - L1.ny * g };
+    const p2 = { x: L2.a.x - L2.nx * g, y: L2.a.y - L2.ny * g };
+    const den = L1.d.x * L2.d.y - L1.d.y * L2.d.x;
+    if (Math.abs(den) < 1e-9) { out.push(p2); continue; }
+    const t = ((p2.x - p1.x) * L2.d.y - (p2.y - p1.y) * L2.d.x) / den;
+    out.push({ x: p1.x + L1.d.x * t, y: p1.y + L1.d.y * t });
+  }
+  return out;
+}
+
+/** 顶点沿每条边的外法线位移，得到互锁轮廓。V 需按逆时针排列 */
+function edgeShape(V, dFn, N) {
+  N = Math.max(4, Math.round(N || 20));
+  const pts = [];
+  for (let i = 0; i < V.length; i++) {
+    const a = V[i], b = V[(i + 1) % V.length];
+    const ex = b.x - a.x, ey = b.y - a.y, L = Math.hypot(ex, ey) || 1;
+    const nx = ey / L, ny = -ex / L;
+    for (let k = 0; k < N; k++) {
+      const t = k / N, dd = dFn(i, t) || 0;
+      pts.push({ x: a.x + ex * t + nx * dd, y: a.y + ey * t + ny * dd });
+    }
+  }
+  return pts;
+}
+
+/** 边位移波形。包络 sin(πt)^env 保证 d(0)=d(1)=0，图形永远闭合 */
+function waveFn(kind, amp, freq, envPow, phase, seed) {
+  const r = rng(seed || 1);
+  const p1 = r() * Math.PI * 2, p2 = r() * Math.PI * 2;
+  const fq = Math.max(1, Math.round(freq));
+  return t => {
+    const env = Math.pow(Math.max(0, Math.sin(Math.PI * t)), envPow);
+    let v;
+    switch (kind) {
+      case 'arch': v = 1; break;
+      case 'saw': {
+        const u = (t * fq + phase) % 1;
+        v = (u < 0.5 ? u * 2 : 2 - u * 2) * 2 - 1;
+        break;
+      }
+      case 'step': v = Math.tanh(3.2 * Math.sin(2 * Math.PI * (fq * t + phase))); break;
+      case 'hook': v = Math.sin(2 * Math.PI * (fq * t + phase)) * (0.3 + 0.7 * t); break;
+      case 'organic':
+        v = 0.64 * Math.sin(2 * Math.PI * fq * t + p1)
+          + 0.36 * Math.sin(2 * Math.PI * (fq + 1) * t + p2);
+        break;
+      default: v = Math.sin(2 * Math.PI * (fq * t + phase));
+    }
+    return amp * env * v;
+  };
+}
+
+/** 反对称化：使 d(1-t) = -d(t)，即「对边共用同一条曲线」的条件 */
+const antisym = fn => t => (fn(t) - fn(1 - t)) / 2;
+
+/** 两条线段是否真正相交（端点接触不算） */
+function segCross(a1, a2, b1, b2) {
+  const d1x = a2.x - a1.x, d1y = a2.y - a1.y;
+  const d2x = b2.x - b1.x, d2y = b2.y - b1.y;
+  const den = d1x * d2y - d1y * d2x;
+  if (Math.abs(den) < 1e-12) return false;
+  const t = ((b1.x - a1.x) * d2y - (b1.y - a1.y) * d2x) / den;
+  const u = ((b1.x - a1.x) * d1y - (b1.y - a1.y) * d1x) / den;
+  const E = 1e-9;
+  return t > E && t < 1 - E && u > E && u < 1 - E;
+}
+
+/** 两条线段共线且区间重叠（退化的零面积重叠） */
+function segOverlap(a1, a2, b1, b2) {
+  const d1x = a2.x - a1.x, d1y = a2.y - a1.y;
+  const d2x = b2.x - b1.x, d2y = b2.y - b1.y;
+  const n1 = Math.hypot(d1x, d1y), n2 = Math.hypot(d2x, d2y);
+  if (n1 < 1e-12 || n2 < 1e-12) return false;
+  if (Math.abs(d1x * d2y - d1y * d2x) > 1e-9 * n1 * n2) return false;
+  if (Math.abs((b1.x - a1.x) * d1y - (b1.y - a1.y) * d1x) > 1e-7 * n1) return false;
+  const ux = d1x / n1, uy = d1y / n1;
+  const p0 = (b1.x - a1.x) * ux + (b1.y - a1.y) * uy;
+  const p1 = (b2.x - a1.x) * ux + (b2.y - a1.y) * uy;
+  return Math.max(p0, p1) > 1e-6 && Math.min(p0, p1) < n1 - 1e-6;
+}
+
+/** 多边形是否自交（含共线重叠）。自交会让平铺出现重叠，必须挡住 */
+function selfIntersects(pts) {
+  const n = pts.length;
+  for (let i = 0; i < n; i++) {
+    const a1 = pts[i], a2 = pts[(i + 1) % n];
+    for (let j = i + 2; j < n; j++) {
+      if (i === 0 && j === n - 1) continue;
+      const b1 = pts[j], b2 = pts[(j + 1) % n];
+      if (segCross(a1, a2, b1, b2) || segOverlap(a1, a2, b1, b2)) return true;
+    }
+  }
+  return false;
+}
+
+/** 生成互锁轮廓：振幅过大导致自交时按比例收缩，保证输出永远是简单多边形。
+ *  自交会让平铺出现重叠、破坏「无缝」这个核心卖点，所以宁可自动收一点振幅。 */
+function interlockShape(V, dFn, N) {
+  let pts = edgeShape(V, dFn, N);
+  if (!selfIntersects(pts)) return pts;
+  for (let k = 0.85; k > 0.08; k *= 0.85) {
+    pts = edgeShape(V, (i, t) => dFn(i, t) * k, N);
+    if (!selfIntersects(pts)) return pts;
+  }
+  return edgeShape(V, () => 0, N);
+}
+
+/** 输出一组图形，并自动补绘跨越 tile 边界的副本
+ *  mode: fill = 实心 + 背景色勾缝（互锁结构才看得出来）
+ *        outline = 只画轮廓
+ *        alt = 双色交替（用同色缝补，避免抗锯齿细缝） */
+function drawShapes(shapes, w, h, mode, sw, bgCol) {
+  let out = '';
+  for (const s of shapes) {
+    for (const [dx, dy] of latticeOffsets(bboxOf(s.pts), w, h)) {
+      const moved = s.pts.map(p => ({ x: p.x + dx, y: p.y + dy }));
+      if (mode === 'outline') out += pathFrom(moved, 'none', s.col, sw);
+      else if (mode === 'alt') out += solidShape(moved, s.col, Math.min(sw, 2));
+      else out += pathFrom(moved, s.col, bgCol || s.col, sw);
+    }
+  }
+  return out;
+}
+
+/** 在图形内部按对称阶数排布装饰点（眼睛），让互锁图形读起来像生物 */
+function symmetryDots(cx, cy, ex, ey, r, order, col, w, h, bb) {
+  let out = '';
+  for (const [dx, dy] of latticeOffsets(bb, w, h)) {
+    for (let m = 0; m < order; m++) {
+      const a = rad(360 / order * m), ca = Math.cos(a), sa = Math.sin(a);
+      out += circle(cx + dx + ex * ca - ey * sa, cy + dy + ex * sa + ey * ca, r, col);
+    }
+  }
+  return out;
+}
+
+/* ---------------- 图像图案：默认图（内嵌）+ 内置示例图 + 亮度采样 ---------------- */
+const IMAGES = {};
+
+/** 半调网格的默认图：项目内 头像.png 的降采样内嵌副本（360 × 360 JPEG，data URI）。
+ *  用内嵌而不是运行时读 头像.png：file:// 打开时 fetch / canvas 取像素都会被浏览器拦，
+ *  内嵌 data URI 在任何打开方式下都能解码，默认图才真的「默认就在」。 */
+const DEFAULT_IMG_URI = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/wAALCAFoAWgBAREA/8QAHQAAAgEFAQEAAAAAAAAAAAAAAAEHAgQFBggDCf/EAEwQAAEDAwEFBQQGBwUGBgIDAAECAwQABREGBxIhMUETIlFhcQgUMoEVI0JSkaEzYnKCscHRQ1NjkqIWJHOy4fAJFyU0g6MnwkWT8f/aAAgBAQAAPwDqeiiinmkaRoFFFFOlTpUUqKDRinRRRTooopUUU6KDRRRRRSoooopiiiikaBRRRTpUUUGiiilxop0UwlSvhSVegzVpPuFvt6d64XCHDHjIkIa/5iK1i47VNmlucLU3X2m2lp5p+kELI+SSaxEnbxsgjnC9fWpX/DS6v+CK80bftjqjga7t49Wnh/8ApV/H20bJpGOz2hafGfvyCj/mArYrVq/SV2SlVr1TY5oVy7C4NKJ+W9ms4ASnfAJSeoHD8aXpRRRTooopU6KVOlRRTFIU6VFFGKBRTpUdKKKVOjFMAngASfAVpettqmzzRm+jUOrLbGfRzjNuds//AP1t5UPnioa1T7YGlIy3GNMaXu13dGQ25JWmO2o9DujeUR+BqM797Rm2W+7/ALg5adNR1HKewihTgH7Tm8fyFaDfdZa0vClnUO0y9SAo95tM9SEH90Kx+VaxITp5a+0lT3pTnVS3VLJ/KvHtNMp5NlX7q6oQLG+rDESS4fBCVH+de30Kw+Mtx5DI8VkD+ZrzXppfSSE+vGvNemZATlMlk+qSKu7dfdYaXeSu0aqnQFp5e6XFbf5AipC0x7UG1uy4RKvES9tDHduMRK1YH66N1X5mpY0r7ZER0pb1Lol1vxdtswK/+twD/mqVdL+0XsmvpQ2vUSrM+oZ7K6x1MY/f4o/1VKNquFvu0RMu1T4lwjqGQ7FeS6g/NJIq5oooooop0qdKimKKKKVOlRRTopUUdaK85T7ESK7KlPtR47Sd9x11YQhCfFSjwA9a5/2p+1XorTZdg6TYVqi4JyO1Qotw0H9vG85+6MfrVzBtG28bS9blxmfqB23wF8PcbbmOzjwVg7y/3iajNKxvbziSvqQTjPrVym5Sm07kdSY6ccmkhJ/Hn+dWzr7zxy6844f1lE151cRmWnDl6UhlHmCo/gKykdeno2CpMiUvxUjA/DNZFvUVubRuNsOoT0CUAD+Nejeobarmp1Hqj+lXUe52984blt5PRR3T+desmJGlJ+vRvDoQoj+FYOfpzgVw3jn7jn9awEmO/GcLb7Sm1eBHOvOveNMkx+DTp3eqVDeSfkeFZ7T+qF2uYmVGVMtUkcpVqkrjrHyBwamPSPtB7RrYhKY2s4V8aSBiPe4oKwB07RO6v55NSZY/askNJSNSaFSpH2n7TckLB9EOAH/VW32v2pdlEpOZsi92pXVMm3KVj5tlQrNs+0TsaeGU62YR5LiPp/8A0qh32iNkwCvdNQS7iU80wrXIcP8AyAfiazmybaRH2kIuM+z2G4wrNDd93bmTilCpLw+NKG05wlIxlRPMgY51vdFFFFOjpRRQKKKKKVFGKMUYpgZOB1qHNtftCaN2cl62x1i/agQCPcYrg3GVf4zgyE/sjKvSuLdq+13W+0mYVX+6KRASreZt0bLcZrw7v2j+srJrQcHwNKinRSoooooq7gS5rLgTFdcyfsDiD8q2ODd5GQifBfa/xEtqx8x/Ssm+xGnRd1YS60rkR08x4GtUu1lkQ951rLrA+11T6j+dYqlTrKWSwXe8uBECG44knG+e6gfM8K3KBs1LW6q6z+91bjjl+8f6VsVv0rYYI3m7e2tY+28Ss/nw/Kr6Yyxd3GNHQ5LUNyWgvT5jqtyPboSeLjy8eQ4DrwAySK7Z2Y262WnZ/ZLdZbc/b7azESIrMhO692Z4hbg6LXnfIPEFWDxrY6KdKiimKBRRRRRSopU6Ks79d7XYbRJu96nx4ECKjffkPr3UIHr4noBxPSuLtvvtQXbUZkaf2frkWizHebdn8USpQ5d3q0g+A7x6kcq57t9pnXBXaBJQ2o5LjnI/1rMLtlrtUftpa1PL6eJP6o/rWvzpZkLIQgNNZ4IHH8T1q1ooooooooooq/gXefCIDT6lI+4s5H/Stktd9iy8IdAYdPQ/Cr0P9aymM+YrWdSWhtoe9xQlCCe+jkB5isEwy6++llhtTjizhKUjJJrerHpa32xhM/UDrRI49mtWG0+R+8fLl61eXLX8CK32FqiKfKeCVr7jY9Bz/hWw6OmXO52kXC5lAU8olhtCN0BHj4kk+PSsPqTVjLbi2ohDjTSik4PCQ6Psg/cTzUevAda2P2YtJzNX60Xer32suyMzmg4yeAuc3itpg+KEgKdX0ShHHmK7++efPxpUUUUU8UUU6VFFFFI0qYrXNo2t9PbP9Lv6h1JMEeK33W208XZDmODbaftKP4AcTgV8/NtW1rVW1rUCfeSuNamln3G1srJbaH3lffXjmo/LArB2fTjUdIemYee57nNKf61lFSowQ4oPIKWh3yDwT5Z8fKtJvM332WpxO9ucgVc8fyHlVhRTr2jRZEjPYtKWBzVyA9TyFUPNhtW72iFnrunI/GvOiiiiiiiis1ZL45E3WJJLjGeB5lH/AEp6iuRmviJGJUylXDd+2qrqFOi6bYUGUNybqsYWs8UMD7vmfHFYS43CZcHy9MkLeV0yeA9ByFO0QnLjco8Jod51YT6DqfkM1vOvdSoiRk2K0r3NxAbeWn7CQMbg88c/wrULZHcmSGme0bZChu9o4cIZRnipR8OOa759mTRrFq0zDvyIz0aCYxYskd5O6v3dZBdmOJ6OyFJCv1Wkto8czNSooop0dKBRRR50UUUUUsVgdoGrrHobSkzUmoJXYQoqeQ4rdWfhbQOqlHkPUngDXzs2r6+1Lte1qu6T8tx2sohQ0qPZQ2c8vMnmpXNR8sAYdudarEwWYv8Avck/Gscs+GfDyFY1dwuN4khhUgMtHioJO6hKRzJ8fnWTucWOiA2JDxiwWx9Uygd90/ePma1yU+2s7sdhLLY6Zyo+p/pXhXtCiSJj4ZjNKcWeJA5DzJ6Cs7CgWeCtHv0gTZJOAwyCoA+HDnXteJNuSndl9soj4Iba0pSj9rd4A/MmtakONuLy0yllPRIJP5mvKiiiiinSooqtlxbSt9s7qsYBHMelUUVmLNP+h4r0tnHvzyC2wr+6SfiX6nkPnWJyVryokknJJqZPZn0BE1pqV256ldYhaNspRIu0mS4Gmn1f2bBWogAE8SPAHqRXbbev7fKYB0xp7Ueo2gnDbtutxbjEcgEuvltBHD7JIxSXq/VDe4p3ZVqUtn4uxnwXVoHmgPD8jXrb9oumXrk3a7k5O09cXVbrUW9xFw1Oq8ELV9Ws+SVk1t54HBBBooopU6KVFOjpRRRWK1bqGzaU07M1BqCc3Bt0RG+66v8AJKRzUongEjiTXzy9oHbBdtq+pULdC4FghLULfBzkpB4FxzHxOED0A4DqTHD01fYe6x8sx+qQeKz4qPX+FWlZG1FmMlU2UN9CT9W1n9Ivz8hzPyq3nzH50gvyF7yjyHRI8BVtTTjI3s48quFzHiz2DZ7FnqhHDe8z400S1MNlEXLZUMKc+2fLPQelW1Kir2022Zc5QYiQ5ckjioRmC6oDxwKmDTOwGTfIDcoagkQFKQFKZm2d1pSc+qsH5Gr5/wBmi9gH3fVFscPTfYcT/WrKD7OmqRMU1Pl24xzyfjSMqT+4tIz6ZHrVhedg+r7LMDiYbeoLeD3/AKPe3HwnxCFjmPDiKtNTbD9WQLb9K2VpV4hkZLSWi1La8Qtk8cjkQkq8sjjUXOtuNOKbdQpC0KKVJUMEEdCOlU0qKKKdXFuiuTZrMRpTSHHlhCVOuBCE5PMqPADzNdx7E9BW7TWlYKLTpS661mMkvNz7oUQLY06oDKo7bw3ldB2paKiAMEDAqVl3HakrC1aY0h3RwbVfpBV6b3u+Koc1nerWgL1NoO8w2QMuS7W4i5sI8SoN4dA8+zNZqBO0vrXTrhiyLXqC0P8A1brfdeaJ6pWg/CryUARWuphT9nriX4L8qfo3OJEN5anXrOn+9ZUcqXHH2m1ZKB3knAKa3wEKSFJUlSSMgg5BHQg9RRRRRTooNKnSp1htZ6nsWjdOStQaintwrfGGVLVxUpR5IQnmpR6JH8ONfPX2gdsd72q6hC3A5BsERZ+j7cF5CenaOY4KcI68gOA6kxdRRTKicAk4HAUqdABJwAST0FZCJZrlJwURVpSftL7o/Or9WnRFjqkXCchpCRxCE7xPlxxWDfLRcPYpWEdN45NbFoPRGodZ3H3Sywu1Sni66taUIbHiSTXRmitgGlbUhmRfFSbpMHFSO23WUnyAAJ+dS1bbdAtrPY2+FGiN4Aww0lvI88DjV0ePM5oHCkRmjHCn4eVarq7Z/pLVLpkXeyx3JR+KS2ncdV5KUPiHrmtBT7Punkqnw1T3nbZIG/EKhiTBd8Qrk4g8ikgdDz41Am0fZxqPRNxcZnR1SYXEszmUEtOJ8f1Tyyk8vMca02lRRW67JdZs6Gv5vIsdpuE1IHu71wjqkJjHnvIbC0je/WOcdMc66CsHtR6xmSUqUzpa4gnKmTHejOKHqHFfjg1K+hfaG0nen24WpIr2mJa1BKXX3Q7DWo9O2AG5++lI86mRCkkJWhQIICkqSc5B5EEVqeqNCwblc1agsst3TupgnCbpCQMvY5IkN/DIR5L4jooGno/VcqZdXdLapgs2vUzDRdLLaiqNPZHAyIylcVI+8g95BOFZGCc7ZIRtsZdvR/7VhZETj8DR4hv905SP1Qmr+igU6QNOiiijFattQ19pzZzpd2/6kl9m2Mojx28F6U5jghtPU+J5AcTXz0217VtSbUtQ/SF3c93gMEiDbmlHsoyT/wAyz1UeJ8hgVH9FFFVISpawhCSpSjgADJJrOR7I+2Ansg7LUMlJ+BkeKj1PlWRhaWYCt+Y+t5R4lKe6D8+dZMm1WpPD3aOR04bx/nXtHnRpMVcpClJZR9tacBXp1NaTfrk9cJRzlDKDhDfh5nzrL7PLIxfL5HgJtsy8THlYahML7JBA5qddwSlAHPA+YrtTRtkZsOnYtuaiwIym05WiEx2bQV5ZJUr9pRJPM+FZjgOdHnRmjNGaWaeaM0icjFeMqOxJjORpTDb7DgwttxAUlQ8CDwNQ7dfZ80nIvD82HLlQ47iPq4gG+22vPFWchRT4JyPXHCsRfvZ/iMwW42nAiVLcz2026SihDX7DTae8T5nA86jrWmxPV2nmnXo8OVdY8dsOSJceMUx2x+2ogn8KjFSVIUQoYIrt72etSbL9ruiYmh7zo2zM3a0w0te6OMJV2rSBjtWXPjz1UM5BOckctK28+y2bLGd1Ds5ekvxGu/Ktr6it1hI5raUBvLSOZSQVAcRvcqg5q7XbTktNq1LFUW1tpWhw4VvtKHdWlQ4OII5EZz41OewnbBI0OuPbrrKcnaLeICTkrXa8n42+pZz8SPs809Qew2HWpDDciO6h5l1AW24hQUlaSMhQI5gggg1gde6Ya1PaG2mpRt91hOiVarigZchSQO6seKT8K08lJJB6UbPtRual097zMiphXaG8uFdYYOfdpbfBxI8UnIWk9UqSa2GiinSxRTpUCtb11qW42SEWdP6YuWpLy4n6iJGRuMpPRTzysIbT8yo9B1rnyZ7PW0LahqVWp9rWr40FauDcC3J7YsN9G0Zw2gDy3iTxOTUR+0l/sBouYrZxs9tLQeiEC93Z9fbyXnRxDCVnglKeBUEAZVgfZOYPooqtltbrqW20Fa1HCUjmTW6Wa1R7PGMqYtsPkd5ajwR5Dzq0uWqGkEohNdof7xfAfIc6wsu93KQClUlSEn7KO7/CqLLAduc9LSSd0d5xXgn+tZXU9zQhCbbEwlDYwojpjoK1uunvZa01JbtB1A6BEhrUUNMo/SSlj+0dVz3U57rYwM8SCQDU75xSJzSPhQB0qrypUsHNOlmig1QaK3TZpcCC9bXFZI+tZ8vvD+B/GoA9srYbEFpk7SdIQWoyoxK71FbJAUk8n0gnmD8QGOHHxrmrZc5frbeHtUaWkKbu+nWxc0oA4rZQoJdPmAFDeHVBV4V9LNEagi6p0haNTQDhi5RG5KADxbKhxT6pVkfKol2r7LdN3a6N2C8MJj2C/wAhabZKaQN+y3VYKsN/4EjBJb+HtAcYKwRx9rCwak2T60k6Y1CxvNpO+hSMluQ0fhdbJ5g+HiCDxFdR+x1tBEiKvZ9Pk9qhllUyxuqVnej5+sY9Wyd4D7pI+zXSFac7HNk2sMzWu7D1PDUxISOQmxU77a/VbBcSfHsk1uFFFFOilRRT6cain2ndqTWzHQK3YTqP9oLmFMWxvPFBx33yPBAIx4qKR4185ZDzsh9x99xbrriita1qypSickk9STXnRTSCpQSASTwAFZyFIi2RsubqZFxUMYz3GR4Z6nxxWMuE+VPd7SU6pZ6DkB6CrWmlJUoJSCSTgAdazrstNmgmDEUDMc4yHR9g/dHmKwRJJyeJPWs1ojTk/VepodktzK3HX197d+wgfEonoAOtd2WG2RbNZYdogtJajw2UtISnOBgcefHicnj41e8c1SedPjgnBwOZrHz79Y7ed2febbFOM4eloScehNeELVOmZzvZQtRWiQ5vbu43NbUrPhjNZjrg5HkaM0+FUnFKikaVZHTUn3S/Q3s4T2oSr0VwP8alG426LebVPsc5O9EuMZyK8PFK0lJ/jXz22A257R/tS27TN3YDnZ3CVZ5rSx3XELbcaUCOoIIPzrrz2bLa/YNC3PSrqlqRYdQT7fHKuZZCw4j8nM/Ot11vYG9UaTuNhW4WnJTOI7w4KYfSQpl0HoUOJQoHyqMNoGi4m3fYfAmy47UXVDUdSo7pGCxNbJbfYV+opxCgR07qulcWaA1DeNDa0jOqbdj3Cyzu3QyvgpLjZIdZP7ad9BHia+mdsnRbnbItygudpEmMIkMK+8haQpJ/AirHVMftosCQlO85CuUaSjHk4EK/0LXWWxjh4U6VFOiilRVnfrtbrDZZl6u8pESBCZU/IeXyQhI4nzPQDqSBXzQ22a/uW0vX8/UksONxs9lCjk5EaOk9xPrxyT1Uo1o9FFVIWpCt5Cik+IqmiiveK/7tl1v9NyQr7nmPP+FePM8aVb5s2n3127RdNaKW7CnXJQakzUDLqkfa/ZQkZOOuMk8sdmaftLFks0a1x3HHUR0BJddOVuq+0tR6qJ4mr/GajDbFtKj6RaMGE6h+6K+FhviU9SVqPBGPDifEp68/XTUu0nWrrqYqbzOaUofVQ23CygdEjHP1UT4+dWg2TbSpCVSFaWuBJG8S6UBZ+RVkmtQutsuNnmKiXKG/DkoPFt5BSofjUg7PNtOrtKlqJKfN5tieBjylErQnwQ5zT6HI8q6W2ebSNLa2YSm1TeynbuXIMjCXk+OByWPNOflW4ZpGqTTopGhCilaVDmkgj5VM7C+DbvXgquStUaS90/8AEJtqgkiPPWi8J9BHVvf62z+NdLaVgJhm8SUpUkXC7SJeFeB3WwfmGwfnWZJrR9mwMLV2vrDuoS0xekXFhI6ImR0OK/8AsS6fnXNPt4aATaNTW/aJamezZuahHn7o4JlIGUL/AH0Dj5oPjU7eyLfFX3YHp9bit52B2sBXHJw2s7v+hSfwqWVJChhQBHgadFFFIGnRSpioV24aO1ttcubOkILp09ouK8ly4XB9OXbg8OSGmgQVNo6KVhJVx47ozyv7RTWmNJzGdn2iIqU22Cd6fcXFBcm5yBlJUpX90g7yUpGE728cHgah2iiiiiiiiiuu/Zo0AdLaYN8uTLf0rdW0rTlPeYYPFKM9Crgoj0qXTVtcG5D8fsY8gxt84W6kd9Keu70CumTy51rtt2f6Thy3ZptLMyS6oKW7MHbEY4gAK4AZ446nicnjW0BKUpCEAJTyCUjAHyFHZKzjcV/lrH6g0/atQQF2+9WxmewfsutbxSfFJ5g+lc/bQdhcKPIK7O+7B38lG+Ctk+X3kn8aiG/6S1PpWQJMiK+0lpW83MjKJQCORCx8J9cGpP2a+0FdLaGrfrJld0ijCUzWwBIQP1hycH4HzNdE6Z1DZdTW1NxsVxYnRyBlTauKD4KSeKT5EVlMUqYpGqckHIOD0NSNoCcJVrUy7KdefaV3g6QSEnlg8yPWtK2nJjRPaQ2Y3vKEuzIs+0ubyeOS2VtkH13x5Z86lLGAMcKK0bTo3duWsgk91dktC1D9belJ/gBVe3jSjetNkmobCW999cRT8Thkh9rvox6lO7+8aiD/AMPiYXNm+o4BUf8Ad7uhxIPQOMj+aK6XoooopCnRRRWk7bdfWrZxs/nX+5/WuLSY8KMlzcXIfUk7qQeYAHEkcgPHFfM+/XSXervJuc5aVvyF76t0YSPBKR0SBgAdABVjRRRRRRTpVMHs37O2NTahavN8Qn6MiqKo7Cx/7x1GCRj+7Tkbx5ElKeprrkj8ap60OENt9oshKPvE4H41reoNc6UstkmXd69QZDUVBUpqPIQtxauQQkZ4kkgeHjUW2e4bS9qr8l21XcaZsaHOz7djIyeZQkjvuKGRlWUp/hWSmbIbXEjpd1XtHv619XHpqY6D6b5P8awcmxbIrWVIZ2nXJuSOG+3eioD/ACNkVZF6wR0KZsu3R8b/AAKZshxxsfi2BWUtds1lLZKLJqrTGqmdwlaWXkFZHhgYUajvWdhsy5DqLtp+TY5aDh2TAT2jST+u3wx8q1m22/VGmpZvekLquUhrnKtrhJA8HG+YHkoEVM2yHa3rXU17i2ifZIUvtOC5DSVNLSkY3lqHFIAHPgMnAFTxw6Uc6s7ndbXbWyu43KFDSBnMiQhvh48TWn3ba7s5tuQ9qeK+c43YqFvH/SMfnWCY9pXR1nuzciBFvMsNq4lLCEJWnqO8rP5Vldc+0Ps32gWJuBCbu9i1DbZLdysU6cwgttzGzlKFKQokJWMoJxjCs9K6L0JqSDrDR1q1PbhuxrlGS+lBOS2o8FIPmlQUk+lZnpxrUNGNe86/1zedwhPvUS1tqP2vdo4UvHlvvqHqDW4pwVJ3hkZGR5Vzv7G9nNlvm1KAgFMeNqERm0+AQXsfkRXRFAoooxRRRRTFcsbdNj21narrFy7Xi56csen4KVIgR3p63BHZ5qcXuoxvqxlRzgYA5CuWNd6Sc01IQ7HkuTrTIWpEG4LjmOmcE/E40hR3i1ngFnAP4gaxRRRRRRRXox2XapL28WwcqCeZ8q6q9kxD0/T12vcoAL7VuBFQkYQyw2nf3UjzUvJPMnic1MN2uNvtUQy7nOjw2Bw7R5wIBPgM8z5DJqKtW7cbXEl/RmlbRLvtxWd1sbikJJ8kAFxX4J9asNKW/ajcdQO6j1Dpy2OvPRnmo8a4pR2EdK0hIO7vKKSkAkJwSSSSa0Wc5rPTEjeuFrlhUqW3H90QXAEZSltCEqKeyUk7oxhXXlWXTrfUcm3WzZhsutLz10QxiS+0gb6HD3nSnB3UAKUcrPLyrbtKezDIvrirhtE1xImz8DtWILwfU2fuqdXn8AmpGtns27JYKR2tilzlj7Ume6c/JJSKvn/Z/wBkbrRbOjmEZ+0iU+lQ+e/Wlal9kmw3AOydEX2fZprad9tl9XbIJHgrgsdOp9KhrSV31C3eLlovVLL8q6WtamlLeO+soSrC2yTxI+0knw86ur1oVsPC5aYlrtF0byUqQohDnkfDPjxHiKkDYHqeNcffrDc7ci3apiZMwFsJMhCTzHXhkZTy4gjgeEsYzxoPBJOCcDPDnXMeuNm+0jaBrGbfrhDi2xha+zYbkygexZTwSnCN48uJ8yaptvs73F9SUSdSxUq69iwVAfNSh/CtphezZZUtBEzUVydePDDDDaR8s5NXmv8A2SLjY9POXzSeoFXWWxuKNulRw2tQPAhLgVgqBIABAz41LfsTJuDexRTE8qw1eZbbKFc20go3k+Hx7/LxNTPcpYgwH5haU8WkFSWk83FfZQPNRwPnVnpO2OWiwR4chaXJait+Y4nk5IcUVuq9N5RA8gKyoG8QPE4qMfZ9tymImtL2oYF61dcJDXDm2252KT8yhdSdRRTopUUUUVitX3qz6c0xcb3f3WW7ZDYU5I7XG6odEYPAlRwkDqSK+ZW1bW912ha4n6nuysLfVux2AcpjMp+BpPkkficnrWq0U6KVFOlVzCgy5qiIzC3An4lDglPqTwHzqc9juoNcs6MOktD2dEt9uStyRcUYU00V7uAXF4bTgDwUT0rebRsdu11mG56/1XLnSFgb0eE6oDH3S8rvY8khIqStMaY0/piJ7tYbREgIPxKaR31/tLPeV8zWWwByrRdtLK1adtcwynG40C+QJEhlAGHU+8ITxPlvZrQtoljn7MtlTNj0i6hNyvjT1y1Bd2nUtOKipcCUsNkkK3d5YBSnicK8ajL2cot6c125dbPrC0aadtbCpbjt0lllmWlJGWD0VvAnIPIAnmK+hSVpcQlxs5QtIUnjngRkUzV3ZnOzuTB8Vbp+fCuetuGjFRPaljX2PuMxLza2xK3RgqcG+gnwz9W3+NX9s0xBhz1yFbz5SrLQWO6kdD5mor2yD/ZHbHpLV1vYI973m5qGyAXQ3wVzIGS2vH7ordNPbUrbfYbFxiG0W2A64pAVd7shh3unBJbSlRA+dbTtJ15brBpViei0p+iWorkgTYcpEtuXIJCW2g638BPePfCfIHFcxXnVMm+qauet9RTUsySVxbLbwoDczwJAIAB6FRKjjNX9u1TpG0xVyHdC3oM/2b0iLlCfPIWk/nU4bF52ndYNxplj1D7u9GfbLkRuYQ5HTvABamnQe7nAyCpPEZNShtZums9DaIu+pompoc+NAYUtbNwt47VSlEISELbIG8FKTgFOMjjwrRtlG0FvZjZLDs+2kabm6UWUERbu6oOw5zjiitSlOJ+BZKjkHOOpFT+koWlK0lKknCkqByD4EH+dOra7SJEW1ypENrtpTbSiw399zGED03iMnwzVno+yNab0tbbEyvtEwo6WlOf3i+a1/vLKlfOsrRTop0qVFFOtS2n7PdN7RrOxatTonuRGHe1QiNMUyN/GAogcFEdMg4yfGubdqnsnsRWfeNCzS2w22p6VIvd1bbZYSnicBLWSAASVFQArlO5x2olwfjMzGZrbSykPshW45jqneAOPDIFW1FFbjsw2b6u2kXg2zStrVIDfF+S4rcYYHitZ4DyAyT0FdFWX2MFmCFXnXiESzzbh28rbT+8taSfwFaBtR9lrXuk+2nWLd1Pamk7ynYqNyQgcc5YyVHHineqMFwdM2a2CTImJu1xUSERkhSUIweJWOBHEciQf1awFwuk2chLb7uGUfAy2kIbR6JHD5866U9jZ4L0pfY+6rLc5tZV0wUEAevdP5VOxJqmqTWv7RLS7fNEXi1xk5kvxF9hx5Op7yD/mSK0HUGnp20zTOmr1b5FvR2DTii1K3sBLwSpaMgHBDgPTmD51p9v2L6nYUI71usa4CpKFvNtz1JUtAUCQCps4JAxnpmunomtb1wRJ0gyykDADN4QsAeHFsVkRq9IbCnLNMz1Sh5pRH4qFK3bQ7U1cEe/WjUEFttwFTq4HaoA8ctKWfyp7Un7NqObaLlBlNS0tNdo24j7J388RzB4EYPGtZecaZaW864hppAKlrWcJSBzJJ5AVC20Jdt2hXawtFp8wWLo1GK45PaEPKOcHGPgZUo4+Ec+WamDTelNNRlMWmNarXb4SjhREZGAkDjk4yT69aib2idM26XtSnaX0nKfskSZaWpE2ExD7CPJDLK3UOlPAKHaJbBXjmVc92rjYhqjYxpTWUTS0NuTd78+4mK5qWVHSplx84TuNbxKm2s91KsceGTxrqFTLSyGZDSXGs99tYykjqCK5s9sfQUbZlfNP7U9Cxm7WtcwsS22EbranCkqSSkcMLSFpUMYI51KOsL+ztCXs30xAQW4N9lIvdxb3t7/cYiEubi8cgp4oTg8e6M45VI2vNL2nWmlp+nL4yh6JNbKd4jiy59l1J6KScEHyxyNQ/wCzftItUDS50JrC/wAWJf7JLeglEglILaF7oJVjdSAcgZI4FIqeQQQCCCDxBBzmiiiiinTqkGnRSp0qpeQ04ytt5Da2lJIWlwApI6gg8MetfNj2kr3a9R7Wbxc9PwURrI2tMWIWoiWG1pQnBUAkAd5W8rJ4kH5CNqVb3sR2bXbafrZiw28lmKgB6fLI7sdkHirzUeQHU/Ou94UzR+y3SjVj03EjMwISQHHFLCEFXIrcX9tZPM/KsUnbVbG3mlyS0mO6cBxUd1tsHwKyMJ9SAKkmyXq33hoKiPAr3QsoJGQD1GOY8xUY7etgmldpUV+5sNos+pUoJbnMNgJfUBwS+kfEDy3h3h58q+furNPXbS97fs96iqjSmTxB4pWnopJ6pOOBro32NmwjSN9e3e8uc2kqwOIDZwPHqfxqdaDiqcUiKj3T6W9H66m2CSNy23RS51pVnCU7x3n2fVCyVgfdcUelb/uKzkKB8iKpJc3uDYI/axVvIXcScR4rHq49/QV5NIueT70uMUnoyk5HzNZuyNPTIDsCLa0uyVK3+1I4oT1Of68K0Ha21Ln6dZscJ9DDtwfxvKGUkNJLpSR4KKUg+Waw+zS0Sjd1PznYrz7Djs+c5EaDbBmyUgJbQkAAJbZycAD9OKkoZHrWp+0HCce0DA1g0vcehwZ1gmLSO9uPtKMdWefBwBP/AMlc1bLrVLs+uoyEWOy3+TMfRBjRJ7S1hKnFJ+tCUqCkLRjOTywTX0LSkuO7oO8VqwD45Nav7VWkZOvNF2TRsXfQZt4aU5ICCpLDaG3CVn5kADrmoMa2g6a2W7cdQWGzaVu2oF2i0xrBaGIICl7yD2j5VzI3nFDOAfhranL/AO03rlot2bTFq0BAd4pkTiDICT+3vKz6NpqItHaA2hI9oe92i1X2LcL5b45eu02QtSGJqVLQVJcyCpSVEgEYyd08q7W03b12nTtstTjwfXDiNR1OJTgLKEBJIHQcOVX9FFFAop0YooopU6K0vaxs10xtHsqIOoYT0hcUOLhFuWtncdUnAJwd08QOKgcDNfM2/WuXZL3Os89ARLgyHI76QcgLQopVg9RkGrIcTgV3bsd05F2YbI2La9uxrrcWk3C9ySO83vJyhjPPupIyPEnxrEXuLeZiPpq6MdnFCh7rDUcmOk8lKHLtD1PTOBjBzkLFJ0xZI6Jk28QUPO8Cp5wAIJ+yBWGka/0vpF/3nS82ZOQJJdfaaYd3WwfiLB3cA547vwnjyJqddHbQrTerKzcFyUPNOo3m32Undcx0KeaFA8CCOB8KgP2jNAI1vYnbzCjgXi3oU4yEc3Ws7ym/M8yPPPjWt+yPJR9G36AyXOxbdaeSFH728nl44QPyqdcUUUHFYPV2nompbWIUl12M806l+JLZ/SxXk/C4jzHUciCRWLtGoZVmuTOl9XttQbopGYkhGfdrk2P7RhR5+bfxIORggZG2pIUkKSQUnkQedHKkRnjW8bNYO4xIuCx+kPZoH6o4k/j/AArnzajd2tVXSTobSbMK5zkyd56WtJcYhoCyCsKHDOMjIPHO6MknG9aZssaw2Vi2RVuOpRlTjznxvOKOVuK81Hj5cAOAFZHHGr6Fb7ZqGy3nR16c3IV+iKjBXVDvNC0/rA4I8wKjqDYZUiDGmaqtyJc+A6uC7OQCiVEltd1xJcThXEYWlQIJStJwc5qRdn0q7x5qYidRyJjqjvRkXRoSE5AJ3S4ndcHiCSrlyqS9OzNQTUpGpYdsjvokfVJgyFutqR0JK0pIVz4YqIvZehlUbWWpMgrvGoZS1rPFZWh50K48wMFHDyz1qZAATgnAJ4mox2KtNTNR631KhndM+4MtJcIwVpShTuPkH0j5VJtFFFI0DnTp0UUUqdFKg8jXz09q3SFyt21HVupiyEWx+++7oXjG84uOh848sLrUNhFgRqPapY4LzIdjNv8AvMhJGUltob5B8iQB867glx0zFb0n6wFwOrCuO8oHIz88H5CrPUwZGnbgqQ6lppEdbi3F8khI3sn8KiGxRy6v6YktqTJkJy0hX9g0eISPBR4FR8eHICsvvrAIClfjWHk3leirmNTIWr6Ndebau0XPdcSpQQH0+DicjJ+0ngeQNTUCDgoUFJ5gjkRWmaP0hG01ru/zoiAmPdWkPNpTnCMKG8k/vEn0NbpRSPGkc0jWQgxbDfoC9Maut0a42eQreSmQODLnRSVDig/rJIINYm87MNSaYSubpLWcaTb0nu2/UqFubg+6iS3hfkN9KvU1q8m/61jlTb2z0yFp/tLfeWXW1eYDgQofhWMe1JtNfPYwdnDEZSuTs26NhKfMhKq9JVl2lastbNq1jrJFqs6E4ctmnkloPDOcOOkbx8+ecmtr03YbPpy2pt9lgNxI44qCeKlnGN5SjxUfM1klHjVJzjI51pOvtAt6tkR5f01PtcuMpKmnoyiN0jiDjI7w6EYIrZdJWnV1mtN61DM1IrWTSGh9MwLlGbjrkMNpyl1t8HHbISDjfGFDgVDukSVoXTlgjQ497tiJDrM5hEiL7ykpU024kLA3ehwRn8K25ggPtk8gsH86i32eGEwdOaltO4EuW/Vt1YX4n67eST+6pNZva9qWPprRkt1xxQflIUyyhvi4oHAXujmVYUEp/XWgdautmNhkad0XBgTkoFxd35c/d5CQ6orWkeISSEDyQK2Wiig0qKdOlTopYopUwaKib2rtJOaq2LXWHb4iXrgzLjS2EpSN5TgcS2f9CyM+Arl72QrY4ztFvhkNFEiFAU0pKuaVF1KVD/TiupwK1jaclT2lFwiklqVJZZex/d728oHyO7j51pIG6MU81g7vbl6p1HbNGob3o8hQm3Jf93FaWDj1WvCR86nEAD4UhI6AdKOHWjhQaVBpYpHlg8q95EuTJS2mQ+46ltISgKVkJHlXjR50s+VGaRrULzrV+M4pFp0nfrtuL3VFtpLIPHHdCyFK9cAeeONbdAbenOMMssrD72AG1YyCehxw4dfSsjtEQXoUTZjZ0OPNz3IyNTSWHAlceG+4EFAP966AoAdG0LV4Zw0S77RdkSfo6+2mfrnRjPdh3S3NhVwgtDkh5n7aUj7Q6DmPhG2W3bVssmshQ1vaYrpx9TLd7FxJ8CFdajO0bWtK6N2hbRG2FyL41erxHm2Vq2o7X3txcZIdCSM8AtIBIBPgDW17PdK6s1PqVnX20yOiE+wrftFjSciJjO4t39ZOSUp4neJWrvbqUS4KdFFKl1p4oFOiiilRRSp0lAKGCAR4EZrkpm0DQHte3y2boag6oiOTIWBwKlntCn5LQ6PwqZBWN1Lum1OodaUthQw6tAKlNDmF7o4kA4zjjjjxxUcyWFsq3VhJyApKknKVJPJQI5g9DXgas7fcpWl9Wrv7FteuUSVCTEmtMAF9sJWVpcbB4K5kFOQTwI5VKOnL/ZtRQPfbNcGZbYO64lJIW0r7q0HCkK8iBWSIo6UUUjxpUCigDNMAk4Aq2lTYUUKVKmxWAk4PavJTg+HE86wcnXeioznZv6qtKV/dEgKV0PJOT1FWo2l6CU+WEaqtqnAcEBZ/HOMYrN6du1q1E32un57FzScA+7K3yM8sjmKkvSVhegw3pi0Nt3JxCksh5O8lrhwKgOeTzAPLhXvpHSVu063JdbcfnT5r5lTZ0khTsh48Cs44DhwAHBKQEjgK2AEg5SSCORFYS96R0pfHe1vWmLJcVk5K5UBpxRPmSnJqP9EWW02D2lNbwbNaoNviqsFseaaixkNJa7y0ndCQMZ6451LFFFOiiikaKdFKjjRTopGiioQ9rvR9zumlbbrnTTajf9JPmYjcGVOR8guDHXdKQrHhv157OtXWvW+l497taxhYCZDOe9Hdx3kH+R6jBrYx5dK1i/aUTLCl2qSiE4VFamlt77KieZABBQTzO7wJ44zxrXV6C1DKe3X77Ctsb7Rhsl59XopwBKP8qqykTZ3paK2QqLMlvKGFyZE55TqvmFAD5ACtfs+zSZpfaGxqjTt6kSIkgdhcoU5e8tTRHBSXPtFJwQFceGM1JZNAopUGlRms1pqwu3huQ72nZNoTutrI4Ff9PH1qPNrOuLbs4YLV1bU7clfoISD3neON7PRPgev41AF12hbTddvuRrIxKYjlfFu3IV9XjPDfHEkDmc44cuFVWzYvrnUDiU3J9q1RQQFOSl77hHXdQD0x1Izmtxtfs8WNls+/3+e7ngpDDaWwricEqOSenDlnNSfof2ZNAtJRLuttlOo4KQ0++oqWOHFWMYHDljqanCx2OxabglmzW2HbIyeKgy2EDzJIrIocakMksvpIUCAtpQVjPUdK5rjbedV7OtYydLbW7S65ETJWiLc2WghbjW+Ql3HwrRjHLBHyro2zXKBebTFutrlNS4UpsOsPNnKVpPI/9OlXmM8Ki3SLxme03tMeRktwrdaoRV039xThH51J9KnRRinSpGgCnSooop0UjRRQQCCCMg1yFtn0VqLZPtNXqbZdELdnnW1+5XC3FWWMMLT2yQnwAcSsAcUjexwGK2vZjtb0rrdhqO1JFuvBA34ElYCif8NXJY9OPlUgqyDg8DVKlV5k9apNUnAOCcZ5U6XWgUlUdKbSO0dQjeSjeUE7yjgDPU1K0KKm3W1EaGhKuyR3Qo4C1eJPma571bsttFx2hT79qifIv1wWpJKXPq2W1czupB+HGEgZ4AVbxTrOBJlwLRpHTkO1NL3IpNxLZWkcAoobbIGRjA5jzrJ2a2bS7w8mPGRpOMonK1n3l0IHiT3a2yFoXaLFlIfa1dpNC0cs2F5zB8RvP86yxs21pPLXemHP2rA6j+DxoDW12I5xc0ndWx9x96Mo/Jbah/qqhOqtT2d5arrs1uLEUDL0m19lKTy4ndaUVkee5VzerboDa/pIw53ud3hLKt3CwmRFcAwSAe82tOeRHXiKs9g2hLns405c9My7sq5wG7it61uKGChhaQd0joQoHPTqOdSRHG+8hJOBnJPgOtRH7Oi1XpnWmu1cUak1LIdjHxjMfUtcevJX4VK9FAoop0jSNFOiikaKM0UUU6VW02DBm7vv0Vt9KUON4UM9xxO6tP7yeBr5d7R9Nv6U1zfrOhDvYWy5uxG3cHHdUd3j47uDW06F24650wluM9MTeYKBgMT8rUkeCXB3h8yR5VMmmvaN0dPbSi9wrhZ3j8RCO3a/FOFf6a3aLtT2cyW0rb1lakgjOHHFNkfJQFY3UG2rZxaI61i/puLgBKWYLSnFKPhkgJHzNQZq7b7qW76jgS7Yw3bbZAkpfRFBClv7p/tF46gkYGAM9eddR6ZvUDUVhh3u2OFcSY0HGyeYzzSfMHIPmKyNFGKDyqn1rbtO6oEW2OsTTvKYbJYJ+3jkg/8AfKtSdWt55bzhKluKKlHxJqgnxqRdDN7mnWVdglrfUpWRzWM8FH/vpWcq0m3S2QVhE64w4qjyDz6UE/ImsY1rXRrj5jo1ZYi6DjdM9oHPzIrOtqQtCXG1pWlQylSVAgjxBFYpzTdhXqpvVRtMQXxEdUYTkow6ptXNKiPiHrkjpWVrRdvuqntI7J7tMgEm73LdtVqbT8S5L/cGPNIKlfKs3s702zo/Qlk0uxgptsNthagPicAytXzWVH51nqdFFFBpUU6VOikRRigCnRSoooqFfaM2UWu+bKtXPWeC4u9yZwvgUO8t19CQgoSOgLe8AB141zj7UexF/QLFs1LZoxVZ5MZhiclAyIssNpCifBDhBIP3sjwqBaMnxozUg7E022deJ1jucRmQ3Njko3wM5TxIB5jhk8OoqcNnsK+7J7ouzXoqe0fcHgqLOCt4QHlYAS791KuAKuWcHhk1MquBoBp0wM0ikilSORXva4ap9wZiIzlxWCfAdT+FSqy2hllDTaQlCEhKQOgHKqia0DXWn3U3H6QhsLdQ+e+EpKihf8cGtZ1Js4cvLca0XPUDFnM1Kt1tBCnnQMbwSDwBGRx48xUm6J03A0npyNY7aX1MMJ+J51TilHqSSeZ8sDyrM0JBUoJSMk8APGoZac/8zvaCMps9tpXZ6VMsq5olXZY7yh0IbH4FI8amSnRQaVOiilRTAoooooop0qKKKKsr5ardfLPLs93htTIExosyGHBlLiDzH8weYIBFc16s9leNN0VNtdqlst3a2ynF2Sas497irwsR5PgpCt8BwdCM8OCeOr9ablYrxKs94hPQp8R0tPsPJwpChzB/ryI41Y1mNFXQWXVtquqv0caU2tweKN7vD5pzXfqgw+0UlKHmHE4wpIUlaCORB4EEdK8okdESOmOwClhsYbQTncT90E9B0HTlXskhRIHMc6qFMU+fOqTVNZXSc1EG+MuOAdm5lpRP2c8j+OKko86VAz0rlj2mNoMtjVPvdnSVHT7phhaE8d9xaStWeoBZFdI6LupvmkrVdlnLkqMlbnDHfHBXD9oGsvUf7cNW3DT+noth0yO11fqV02+ytA8WiR9ZJPgltJJz448DWa2ZaPt2hNE27TNtPaJioy++R3pDyuLjqvNSvwGB0rZaKM0UUUqKKdOlRRRQKKOtFFBpU6VFQ37SmxG37ULP9I2xLELVURvEaSrupkoHJl0+H3VfZPkeHLW0TYXfLbs6t2vLJbpfuyGC3fbc4kl+3SWlFt1WOamipJVnmneHNODUMqacQlC1oWlDgJQojAUM4OPHjXb+xG9G/bLbFNWoqdbje7Ok899o7h/IA/Otzrwlx0SWS24Vp8FtrKFpPiFDiDUf6rvuvdFFUxNtb1dYW+8tbY7GcwnrvBI3XAPvBIPjjnVGlNuOz++hKJFxcs8g/wBnPRup+S05T+OKkaFLiz4yZUKSzJYUMpdZcC0H5jIr0zmgmqTnpUlaTuP0laGytWX2fq3fEkcj8xWWqPNsG1Ow6Ds729dYqbtkpaZJCyhQyVbyR1AScA9cZ51xlrLaVbXZUt6BCElmdECXBIWC52i0OALISSAQd1RHHn0qYPYr2stvGXorUEzDj74fgPPOH4lJSktcfvKGR5nzrp3Vd+tWl9OztQ3yUI1tgNF19zGTjkEpHVajhIHUkVo+yjT92ud6l7UNZRyzfbsyGrbAXx+iLfnKGR/iK+JZ8TjxqSqdKjFFFOlRTop0qKKKKKDSp0UqKKKDVKkhSSkpBB4EEc/61DW0TYzso/2Tu0K8SoWnLbMme+RH3H22Rb5SkhK+xKyBuL3UktcsjIxwxG3s9RGbAnVWjY96h3qPaLmlcebFWFNPNOtghScEjmniMnByKlSkfCqVJ8OFRPtU2KWPVanblaS3Z7uripaEfUPn9dI5E/eT8wa5xvFt1xs1vfYPLuFmkZy29HeUlt4DqlSeCh/2RW46Z9oPXNs3G7n7jemU8D7w1uOEftox+YNSVp72j9LS91F6tNxtiyO8tvdkN5+WFfkakCx7StB3oJEDVNt7RXJt9zsV+mF4rZ16yVpK1ybxGhP3JtTZBTGAWCQMg5yB5fPHGoL2o+0ntCV7zBt0JWn5CE7jg7PdUwFgHjvcS4RyP2RkgZOU853m8XG6znJk6U88+4MLW4slSupyT4niasCeOauLZMft85qXHcUhxtQUCkkH8a7T9n6+XjblNiXLWEgPWrSPZOCHu92fcF75Q+90IbSngnxOfGumCcnJ50qKKKKKKdFFFOqadFBooooopUU6KVFRDt2286a2ZH6MZaF71EQD9HtO7qY4P2nlgHd8kgbx8hxrSdk+oTttv0rXGpLPb2ItnY+jLfbt/wB4Qh1w9o8+QscFFPZpBxyBxW0P7M7ZDukm7aWuEvT06ShDbwbAkR3Uo+EKaczwGTjdUnGatZC9Z2cf+qWBm8x085VkcJcx4qjOEK/yKV6V72a+2i7vOMQJyFyWv0sVaS2+1+00sBafmKyRpEVj79Z7Vfra5bbzAYnRHPiaeTkZ8R1B8xg1zrtO9n2dDU7cdFOqnR+KjAdUO2QP1FHgseRwfWoKmRpEOS5FlsOx32lbrjbiSlST4EHiDXlmr223G6xFoRbp8yOvfCkBh5SDvdMbp51MuzPYztY2h6cb1LEkW9u3yVuGO9dn8reV8CnEjdUrmMbxx8PDlWTn+ybtSbaKmlaakL7qcNz1BR48Vd5IHrx9KxEX2Wdr75VvWi3M4VujtLi0MjexkYJ4Y73p58K3TS/sdakemA6k1Ta4UZL2FCG2t9xxsY4pyEgE8cA+FdTbL9n+mtnOmxY9NxVttKUHH33Vbzr68Y3lq/HAHAZOK2qig0UUUUU6KVOilRQTRmgmlmnTpUUU6Ksb7eLRYYSpt8ukG1xkjJdlvpaT+KiM/KuV9uvtSKWZendmWUAKU07fV47w5Ex09P21cfADga5UfdeffcffdceedWVuOOKKlLUeJUSeJJPU1s+zHXN72f6lbvNncC0KARLirJDclvPwq8D4K5g/MHufZ/rCya500zfbE+Vsr7jrS8ByO5ji2sdCPwI4is8oDrWNv1gsl/bQi92uNO7P9G44Cl1rzQ4khaD5pUKwa9G6hhZVpXUbdzb6WvUC8OejUxAyfIOoUfPrWHk6iRa5iLfq22TtLTlq3UIuSQGHT/hSEktL9N4HyrM9AehGQfEUHjWp680DpjWbBRerclUgJwiW13H2/RXUeRyKiO3ezJMn6kMaLqDtbaOI3Yx94xnkRncH7WflUw3HZNpDZHsnv9+g20StQpgqjwn3B2rnvL2Gmwk4+LeWMboHEVLmyJ6wI2fWiz6fmJkM2iGzCfbUgtvMOoQAtLrasKbXvZJCgDx61tlFFFOilRRRyozRRTooopUUUsUUYpinSoJCUKWogISMqUeAA8z0qPtaba9l2ki43ddXQXZKDgxYJMp3PgQ3kA+pFQvq72w4SFLa0ho5+TxITJukgNpPn2beT/qqIdWe0dtbv+8hGoUWVhX9lamEsn/Ocr/OorutxuF2lKmXWfLuElXN6U8p1Z+aiatI36IV6Ggmtx2Q65vug9VN3O0BUhhzCJ0JSsNyWs8j4KHNKuh8iRXc+jtSWjVuno19sr/bRZAwQrgtpY+JtY+ypJ4EfPkRWXNUqrIxLk09GVbLywzcLa8Nx1qQ2HE7vmFZCh5GsBeNjcOLvS9n95e02tXeEBxJlWxz/wCFR3ms+LSk+laZdZV+0qoN65sDlrZ3t0XWIoybcrzU4BvM/wDyJA8zUiWTSMWTFYmP3BuSy8gONmKsKbWk8iFjgQfEVtVvgxLex2EOOhlvqEjifMnmajfb/LLzmi9NpXui5agbkPY59lEbU+ePTvpbrPfQdu1ZKRPVKk2fVUdrdZvEBQQ8tA+y4kgoeQOqFgjwxVC9V3PSslEHaFHYjR1qCGNQxEKFveJ5B4EkxVnwUSg9F9K3UEKSFAghQBBByCDyI8qKKdFInFANFIUYpiiiinQKVM0qKdGKAMnAGSelR7tK2zbO9n/aM32/NO3BH/8AHwsPyM+Ckg4R+8RXPGufa+v8zfY0XpqJbGjwTKuCveHseIQMIB9d6oL1ntE13rNajqfVVzuDZz9QXdxkejacJ/KtWASngkAelVUGqaTHwY8zVeavIFvdkkLVltv7x6+lZtmO0w3uNJ3R18T61ueybX9x2fahM1lLkm1ySlNxhJP6RI5OI8HE9PEd09MdmWS5wL3Z4t3tUpuVBlth1h5B4KSf4HoRzBBFXRFUbhUd0deFSC89Gt1tU/LfajxorJW664rdQ2hKcqUSeQABJNc/v7fL7etSZ0zbLREsTTm6EXRt1Uu4s/3iUApDSFDin4zyyByrerC3C0tr1uFbm0RtOauimfbGUDdbjTW0gvtJSOCQ42Q5gYG82541vlQPtzuJVt00RbyspahWyXMdwejriGf4JNb7a31RLnHkZxuOAn05H8qkp9pp9lxh5tDrLiShaFpCkrSeYIPAg+BqOZmkb/oxRmbO0+/2reKn9MSn91tI6mE6r9Cr/CVls9Nys7pPU1q1NCdkW5bzb8dzsZkKS2WpMN3GS282eKVfkRxBI41madFI0qOYpgUCg0UUUxRRRRRQKZIAJJAAGSScAVxh7SftGXC83CVpPZ7cHIdnZKmpd0YUUuzFcilpXNLX6w4q8hz5pUkKUVKG8onJJ4knxqgtY4tnB8Ohq/tceNMSptbjjb6eaeHEeIq7VZUfZkL+aRVCrKscpCfmmvJVokDk42fmRXkq2zAeDYV6KFeEOJIeWtttokpWQfAetZmFa2m8KeIcX4fZH9ayI4DFI14rJWvs0kgDisjp5etSv7O20caLvgsV3kKGnbi6BvLUSIT6jgOceSFcArwOFeNdar4cquLQ0H7nGbIyC4CfQcf5VoHtBalXqW+f+XdtWtVuiKQ7fVN/27pwpqH6cnHB+wnqavtL6Xh2+B/vrLMqQ5gudogKCfADPLHjW0TLfbNS6fiWFV6RarpbZrc62PoCFrjONnKDuK4FJBUlSTjKVEZ616Naiv1jukG0a0tMdtM2QmLDvFsUVw33VfAhxtX1kdasYGd5BPAKzgVBPtMWSfd9p305Zn3mrla7ahmOM4bcIVvKbV5LS4oeorbtjerEaw0SzMUlxubDWYc1pwYWh1AHP1BB/Gp/tL3vFsivE5K2kk+uONaxtd1k5o3SvvEBtp+9TnREtjDnFJdIyXFDnuNpBWrxwB1FaXDuardr7RupbzNiIc1VY3bVOkFIYQ7LYcDrHdyQFEKeSBnyHQVKZGDg8COY8KKKKVFOilRTpU6dFKinRXL/ALa21xy0wzs105L3J0xoKvD7auLLChlLAI5KWOKv1cD7RrjtIwAByp0UjvocS80rddQcpNbNb5SJkZDyeZ4KH3T1FeyhVJxSrGsLet6pClxHHG3HSsKbUDgHyr0ReYaj3g836oz/AAr3buMFZAEpsE9FHH8a9VOpVhLKkrUrkQcgeZqpKAhG6OPiTzJ8aSgFJKVAFJGCCOBFdLezLtHVdoCdEXuSVXKE1m3POK70mOn7BPVbY/FOD0NSnrjV69F6dduMBtqTfJajDs0ZZ4LkKSSXFf4bacrUfQdRUfbEE25Uh5uSuULu3l2QmYQXXH1kqcdUeSyokkKHAg8OWBLTm+W1BsgLKTuE8s44Z+dYrRsa2P6TiRHoyewcRiQ4Wx7w1IH6RzfxvBxK8nifyrJojTNbbDpsJkkXNURMmG4B8MlvDzKhnkO0QkjyNYWFpRzXTadVu3L3ONd4rctgMoC3ElxsHBBGBungRx5VGWn7VP2c7VUwJkp19jUK/dHwptKQmSgFTK+7wO8jfTn9muntHqLmn4wPEjeSP8xrnrVF/XrfadLubDna22GtVstGDlJbSv658f8AEcScH7jafGvD2mbZHm7AmluIym0X6O4kA/Ah0KbP5qHzqItnO3/aBoh1uDLlp1LZEkJbZuaz2rY+6l8d4eW9vJ9K6Z2c7e9n+sXGoLs5en7svgIV0Ib3z4Nu53F/iD5VKhGPmMj0pUUU6KKVFFOigUUUCtL22bQIOzXZ9O1JKCHJQHY2+Oo/p5CgdxPoMFSvJJr5tXa4z7xdZd3uklcqfNeU/IeWcqWtRyTVtRRSJ4VmQ39HSmpKeEWSEpcHRC8cD6VlSK83VJQ2pazhKRknwpJUlSApBCkniCOtFWk2PEUguSEpSPv8jVgxaO2c3llaI/2d4YWr+grMsMtMNBtltKEDoBVZFLFesCXMt1wjXK2yVRZ0R1L0d5PNC08j5joR1BIrpnZNKRtPkSNc30MNvxlfR7FtZWVJiJSApec8cuKO+T1ASOSaka8aft1ycZklsw5sc5jy44CXGz4eCk+KTwNZG3Py3Gy1NaQh5HNbf6NwfeTninzSeXiRxq0uFgtE6SqRKibzi/0m48ttLo5YWlKgF8OHeB4cK3PQ0pqNLWw4tDSVpSGk4wMjkB4cKxWiUHS95l6ClIDbTXazrG9yEiGtwqW1/wARha90jqhTavHEbe1PMYgqt12jHFwtT8acsjqlDycD/KVfI1ve0C+SrDsImyoK1M3KaE2+Isc0vyXQylY8xvlQ8wKgXSqH9l+roWn9RqcVaJje7bJTpBMRZISGnVct0nglXQnBqS9qUU3DYvrm3BOXBavfEAj7UdxLn8Aa4wJS6FBQ5/Eg/wDfKvL9A2WnUB6IeihvFv18U/wqQtn21TXehktt2G/uPW9PEW6fmTGI/VBO8j9xQ9Kn/Q/tQ6YnhEfWVpl6ffPAyo+ZUQnxOB2iB6pI86m7TmoLFqSAJ+n7xAusUj9LEfS4B64OU+hxWTooopUUUU6KKKYBJAAyTwFfP/2udo/+3m05y2W+Rv2OwFcWNunuvPZ+td88kboPgkeNQ5RRRVJ5GtrLaJFvSw4MoW2AfwrxtTiyyuK8cvxzuKP3h0P4V7S0b0V1Pigj8q123TXIqgDlbR5p8PMVmJMxDcRMlsdolRAzyA8z4CvRmMAsPPrDznNJx3U/sj+fOvcmilTpVt+yHWq9CazauTylG0y92Pc2xxwjPdeA+8gnPmkqFdyaZhwbzFW24sbxSHWHmjneSR+BHI/OvC62Wbb176klbKTlLzfT18Pnwq9tcS33pkoJ91noTlQQO44PvBPTzA5VaXGyz4OVraLjY/tG+IHr1FVXyDK1lpxKIb7cXUdpdE21Slcg8kEAK/UWkqbWOqVk8wK542vXxGr7RqG4qjPQ1dg627Fe/SRnWU4U0rzSpBHnz610NDl2u46ch2S8wWLjarhCQHGnEbwJXx4j5jlxB4io01tpD6JlI01q0m62W4JXEst0kHeWN7BESQf73u9xf9oBx7444bZ9JmWue/sw1Y648q5QJMS1TXFbxktLYWnsFnq4nIwftJ8wa5ItziZEJriUutjcUeoI516vy0RG+1fSoAdUpJB/p868ba+X3yqM04iKck7/AAAV+qOnnWSqqBMn2O7MXqy3CTa57KxuyYrhQsHPAnHBQzjIOQQa7h9nXakjaTpZxFxSzH1Jaylq5MI4JWD8D6B9xeOXRQI5YqUaKVOlRRRTopiot9qHX/8A5f7JrhMiv9ndrjmBbsHvJWsHfcH7CMnPiU186204Tx59SaroopGkrka22Kf91a/YT/CrSaPd5rM0cEK+pe9DyPyNXqxlJHiCK0/HStgtaR9GtpKQQoHIPXJNUMLVAeTGeOY6zhlZPwH7p/lWRNI0Yp4pYpHBBBAIPQ1057IO0BTsUaRuUgmVaE78NSjxehE4KfMtk4/ZKfCur+Ck9CCPxFYaZYWxJTNtqhFkoO8B9hR/lWUhvLeaBdaUy6OC0HofI9R514uWyKqUiU2jsX0nO+3w3vEEciK509qbS67Ld3tSQWALZqJhyJcUpHBucGlBp0/8RA3D+shHU1I+xxj6R0/YJTo30N2yM8f2i0nH58flWwbZZFvj7NbsxcYCLl742IcWIo4L8lxQSyARxSQvCt4cUhJUOVRPq/RadS6Wj22TcXkXWIhtcW6JO663JbA3Xsj9YZPqa4lcRPs+pZtvu6C3LbkLZlJPDDgUcn8fyNZYjIIxkHmK8UsqZGIqghP92oZR/wBPlXq3ISFJQ+hTKycDPFKj5H+uKqWpt5LjBOFYKVJ6jPWs/sp1tN0NrC06yjBakRz7vc2E/wBvGJw6n1GN4eYFfRODKjToTE6G8h+LIaS8y6k5StCgClQ9QQa9qVFFFFOiinXBPtqa1/2o2vLsMV7ft2nGzESAe6qQcF5XyOEfuVCIpZ/KmKdFUK5VtkT/ANoz+wn+FOUymRHcYVyWkj0rytbqnoSO0/SoJbcH6w4VrDnBavU1sluTuwWB+oDXld3GkQVpcSFlY3UpPj4/Kray3EndiSVd7k2s/a8j51mMUjQKeM0iKvdP3qfprUEDUVr4zLe72qUZ4Oo5LbPkpORX0a2aaig6q0TbL5bnu2jSWEqQrPHGOAPmOR8wa2M0lpUpBCVlBI4KAzisbEuzYmqt8/cjy0nhx7jg6FJPj4GrTaHpeHrPRN20xPJS1PjqbSsDvNOc23B5pWEqHpWs+zi3/wDhvTUpZy69b2Qs/wDDTufxSaxus5v+0GvVNNuFUDTeWgB8K5zqAVq8+zaUE+RdX4UNMrcfQylH1i1BIB4cT0rl72xNEqg3aJraIyEtzCIk8JHJ5I7iz+0kFJ80jxqH7VJ94hpKjlae6r+tXgNeFwyYTpHxJTvp9Rx/lVnOd7aK1dIvBxvgvyHgf++te1iktyHZbRHdUQ5unpvDCh+P8a7N9izV6rzs5k6TmO783TT4YbyclUVzKmj8jvp9AKnilTopUCiinWu7TdUsaJ0Be9VSCnFuiLdaSo/G6e62n5rKRXzAfkyJst+dMdU9JkuqeecUcla1HJJ9STXitR3txHxdT4V7RY7ryw0ygqP/AHxNDqUocKEqCgDjeHI1TQapPKs1cZZZtkdls/WONjOOicVcWOZ28ctuKy63+Y6GqW1+63txo5DclIcT+0OBrX3PiV6mtpZTuMNp5BKAPyrAXOT71JKkn6tPBP8AWrVQyKzdmuPa4iyVfW8kLP2/I+dZM1TVVI0E4610d7DWuzB1BP2dT3cMTUrm2rePJxPF1oeoysDyVXX1KsLq21CfB7dlI96YBKDj4h1TWF05qN+M4zHlpU8zvAZzlSOP5isPsmvcey+z1bb66jfagQZDgbHNzcedCUDzUQEj1qrZzYHUsR0TCHXsqlXFz+9kuKK3PxWo/ICstfIvYayjOAYQ8624PXOD+YrXNvOjI2pdO3OzuISlm5x1BtWP0cgcUK/zBJ/GvnXAL1vujkWUgtOJWWXkK+wsHB/A5FZ/rScTvIUnxBFa7a5Puy9x0ZZWNx1PlyzXraMxb8GScggoz4jmk/wqbvZf1IrTW3W0oWvdhX5pVrkZPDfPeZPrvpA+ZrunmM0UUUjQaKKYrl//AMQHVZiaXsOi47pSu5SDNlAHm013UA+RWon9yuOHnAkBKRlR5Cru1W52UcjKUZ77h/gPGsrPU1boPYxxurc4Z6+ZNYMCg0GqedVuLU4oKWckAJHoBiq4b6o0lDyeh4jxHUVldQEdjFmtHJQsYPkf/wDKwzQ330p+8sD8TWavknsmvd0HvL+LyTWEopKGf+lZyz3Ht8R5JHbAd1X3x/WskRRkCkSKoJyauLNd5+nb7btRWpZRPtUpEtgg8yg5KT5EZB9a+mekr7b9T6YtuorU4HIVxjIksnqAoZ3T5g5B8xWTorRtWW4QLkmSyCGX1ZAH2VZ4j+YqPtBvh3YXpiytqUvd1DLjvII+JEeXIdwfmhupq09B+j7a20ofWr77p/WPT5cqttQxe1nWp8Di3KSlXoeP8RXvqaD7/Z3mgMrQO0b9R/UZr50+1Fpv6A2rzJTTe5Fu7YnNYHDfPdcH+YE/vVqFsf8AeIiFE99PdV61eA4rVH07sh1Hg4ofnT7UpdYdPxNkJz5ZyK2mTLkwjFuUE/7xDktSmT4KQoEGvohsy19p7aLppF90/K3wCESozg3XoruMltaenXB5EcQa2miiilQKdPpXzv8AbA1Gb9t7viQ4HGLUG7axg/3ae/8A61LqNrTaFuqD8zKUnkjkT6+ArYk7jTeAEobQOnAAVrE+SZUpTv2eSR4CvEUUCilRV+H+2sUiMr4mgFJ9M1ZQXEolNOK+FJ3j8qb7q33lurPeUc+nlVFFI86WOIOSCDkEcwaz9ouHvSexeID6Rx/XHjV+aoNU0da6k9ibXLkfT1y0lLcUtu1vh5pBPER3SSCn9le8P3hXVTTjbrSXWlhaFDKVA8CKqrU9eTt7s7e2Qd3Djnr0H861DYRCjSIl+gOpSXLLquctII5B9KH0/I9qfwqW6SkpVjeAOCFD1FVCuQvbh0yl3TDd4Zay5Z7huqOOTD3D8AoI/GuULG/2Uvs1HuucPn0rYOFaxOG7Pkj/ABDXisbyCPGs1JmhFtg9mclwDeHkOB/Ot62Ya4n7ONdRNVQi4uIVBm7RUnhJjE97h95PxJPQj1r6E22bDudtjXG3yESYcppLzDyDlLiFAFKh6g1cUCilRTqONuW12xbL7IFv7s+/SUk2+2IV3nD99f3WweZ5nGB1I4EkJfuV8m326qQ9cJ0lyS8UjCQtaipWB6mrpNY2/wArcbEZB7y+K/TwrCjjTHCikTSzQDRmjtChK8faQUn0NeUc5T+Veop0ZoNKkFKQtK0KKFpOUqHQ1sVrnJmM8cJeR8af5jyq6Iqg0jW57Dr/AP7N7V7NKcc3Is9Rt0njw3XfgJ9FhJrufTV4VbnPd5GTGUePi2fEeXiK26fNZiW9cwqC0BOU4PxE8gPWo7kOrkPrfdVvLWoqUfOrPY4r3Xarr635wiTHtlxQnxJbcZWf/qT+VSzRinURbfLAnUGn9Q2ggEzbars89HAjKT/mSK+cDa1DChkKB/A1tcd0PMNup5KTn59a165j/wBSk/t/yFeFJlSi6GySQFDdHgCc1uCgFApUMg8CPGumvYp2iAxn9mF4kfXxAqTZVrPFxgnLjOfFByoDwKvCunDRRSor/9k=';
+const DEFAULT_IMAGES = {};
+
+/** 内置示例：一张 3:4 的柔和光斑图（仅在默认图解码失败时兜底） */
+function makeSampleImage() {
+  const w = 240, h = 320;
+  const lum = new Uint8ClampedArray(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const nx = (x + 0.5) / w * 2 - 1;
+      const ny = (y + 0.5) / h * 2 - 1;
+      const d = Math.sqrt(nx * nx + ny * ny);
+      let v = 248 - 218 * Math.exp(-d * d * 3.2);
+      v += 18 * Math.sin(x / w * Math.PI * 1.6 + 0.4);
+      v = clamp(v, 16, 250);
+      lum[y * w + x] = v;
+    }
+  }
+  return { lum, w, h, aspect: h / w, srcW: 720, srcH: 960, name: '示例图' };
+}
+
+/** 一张位图 → 亮度数组（上传图与默认图共用这条处理链，网点密度口径一致） */
+function imageToLum(im, name) {
+  const sw = 320;
+  const sh = Math.max(1, Math.round(sw * im.height / im.width));
+  const cv = document.createElement('canvas');
+  cv.width = sw; cv.height = sh;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(im, 0, 0, sw, sh);
+  const data = ctx.getImageData(0, 0, sw, sh).data;
+  const lum = new Uint8ClampedArray(sw * sh);
+  for (let i = 0; i < lum.length; i++) {
+    lum[i] = Math.round(0.2126 * data[i * 4] + 0.7152 * data[i * 4 + 1] + 0.0722 * data[i * 4 + 2]);
+  }
+  return { lum, w: sw, h: sh, aspect: sh / sw, srcW: im.naturalWidth, srcH: im.naturalHeight, name };
+}
+
+/** 解码内嵌默认图。解码完成后放进 DEFAULT_IMAGES：
+ *  用户点「↺ 恢复默认图」时删掉上传图，就会回到它，而不是回到内置示例。 */
+function loadDefaultImages() {
+  return new Promise(res => {
+    const im = new Image();
+    im.onload = () => { DEFAULT_IMAGES.halftone = imageToLum(im, '头像'); res(); };
+    im.onerror = () => { console.warn('[默认图解码失败] 回退到内置示例图'); res(); };
+    im.src = DEFAULT_IMG_URI;
+  });
+}
+
+let sampleImg = null;
+function ensureImage(id) {
+  return IMAGES[id] || DEFAULT_IMAGES[id] || (sampleImg || (sampleImg = makeSampleImage()));
+}
+
+/** 双线性采样：u/v ∈ [0,1]，返回 0~255 亮度 */
+function sampleImage(img, u, v) {
+  const w = img.w, h = img.h, lum = img.lum;
+  const x = clamp(u, 0, 1) * w - 0.5;
+  const y = clamp(v, 0, 1) * h - 0.5;
+  const x0 = clamp(Math.floor(x), 0, w - 1), x1 = clamp(x0 + 1, 0, w - 1);
+  const y0 = clamp(Math.floor(y), 0, h - 1), y1 = clamp(y0 + 1, 0, h - 1);
+  const fx = clamp(x - x0, 0, 1), fy = clamp(y - y0, 0, 1);
+  const a = lum[y0 * w + x0], b = lum[y0 * w + x1];
+  const c = lum[y1 * w + x0], d = lum[y1 * w + x1];
+  return (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy;
+}
+
+const PATTERNS = [
+
+  /* ========== 科技 / Tech ========== */
+  /* 圆形 / 方形 / 菱形点阵：同一套几何，点形状固定；不再有形状下拉。
+     随机明度：开启后 tile 从 1 个点扩成 12×12 个点的马赛克（504 × 504），
+     每个点拿一个确定性随机的明度（在 背景色 ↔ 图案色 之间抖动），
+     给规则点阵加一点疏密噪点；关闭时仍是原来的 42 × 42 单点 tile。 */
+  ...(() => {
+    const SP = 42;    // 点间距（= 原单点 tile 边长）
+    const MOS = 12;   // 随机明度时的马赛克点数（每边）
+    const make = (id, name, shape, defs) => ({
+      id, name, cat: '科技 / Tech',
+      tile(P, C) {
+        const rand = clamp(P.rand, 0, 100) / 100;
+        const n = rand > 0 ? MOS : 1;
+        const w = SP * n, h = SP * n;
+        const rr = P.r * 1.4;
+        /* 与旧的单点 tile 完全同构：交错排布 = 每个 42 格再加一个对角半偏移的点 */
+        const pts = [];
+        for (let j = 0; j < n; j++) {
+          for (let i = 0; i < n; i++) {
+            pts.push([i * SP, j * SP]);
+            if (P.stagger) pts.push([i * SP + SP / 2, j * SP + SP / 2]);
+          }
+        }
+        const rnd = rng(P.seed || 1);
+        let out = '';
+        for (const [x, y] of pts) {
+          const op = rand > 0 ? 1 - rand * rnd() : 1;
+          for (const [dx, dy] of wrapOffsets(x, y, rr, rr, w, h))
+            out += dot(x + dx, y + dy, P.r, shape, C.fg, op);
+        }
+        return { w, h, svg: out };
+      },
+      params: [
+        { k: 'r', label: '点半径', t: 'range', min: 0.4, max: 16, step: 0.2, def: defs.r },
+        { k: 'stagger', label: '交错排列', t: 'check', def: defs.stagger },
+        { k: 'rand', label: '随机明度 %', t: 'range', min: 0, max: 100, step: 1, def: 100, reRender: true },
+        { k: 'seed', label: '随机种子', t: 'range', min: 1, max: 99, step: 1, def: 12, when: P => P.rand > 0 },
+      ]
+    });
+    return [
+      make('dot-circle', '圆形点阵', 'circle', { r: 4.2, stagger: false }),
+      make('dot-square', '方形点阵', 'square', { r: 8, stagger: false }),
+      make('dot-diamond', '菱形点阵', 'diamond', { r: 10, stagger: true }),
+    ];
+  })(),
+
+  {
+    id: 'crosshair', name: '十字准星', cat: '科技 / Tech',
+    tile(P, C) {
+      const s = 56, w = s, h = s;
+      const a = s * P.size / 100 / 2, gap = a * P.gap / 100;
+      const sw = P.sw;
+      let out = '';
+      for (const [dx, dy] of wrapOffsets(0, 0, a + sw, a + sw, w, h)) {
+        const x = dx, y = dy;
+        out += line(x - a, y, x - gap, y, C.fg, sw);
+        out += line(x + gap, y, x + a, y, C.fg, sw);
+        out += line(x, y - a, x, y - gap, C.fg, sw);
+        out += line(x, y + gap, x, y + a, C.fg, sw);
+        if (P.center) out += circle(x, y, Math.max(0.4, sw * 0.9), C.fg);
+      }
+      return { w, h, svg: out };
+    },
+    params: [
+      { k: 'size', label: '准星尺寸 %', t: 'range', min: 10, max: 100, step: 1, def: 55 },
+      { k: 'gap', label: '中心留空 %', t: 'range', min: 0, max: 90, step: 1, def: 40 },
+      { k: 'sw', label: '线宽', t: 'range', min: 0.2, max: 5, step: 0.1, def: 1.3 },
+      { k: 'center', label: '中心圆点', t: 'check', def: true },
+    ]
+  },
+
+  {
+    id: 'crossline', name: '十字点线', cat: '科技 / Tech',
+    note: '十字和连线 / 点都用「图案色」，两边的明度可以分开压暗（十字亮度 / 点线亮度），'
+      + '不改配色就能做出十字亮、连接线暗的主次关系。连接方式只有「连线」「点」两种，点固定为圆点。',
+    tile(P, C) {
+      const s = 64, w = s, h = s;
+      const cx = s / 2, cy = s / 2;
+      const a = s * P.size / 100 / 2;       // 十字半长
+      const csw = P.csw, lw = P.lw, dotR = P.dotR;
+      const sub = Math.max(1, Math.round(P.sub));
+      const cB = clamp(P.crossBright, 0, 100) / 100;   // 十字亮度
+      const lB = clamp(P.connBright, 0, 100) / 100;    // 连线 / 点亮度
+      /* 连接层：连线（贯穿 tile 的横竖线，线与相邻 tile 直接对接）或圆点（等分点）。
+         不再有强调色 —— 连接层用「图案色」+ 点线亮度 % 做明度差。 */
+      let conn = '';
+      if (P.conn !== 'dot') {
+        conn += line(cx, 0, cx, h, C.fg, lw);
+        conn += line(0, cy, w, cy, C.fg, lw);
+      } else {
+        for (let k = 1; k <= sub; k++) {
+          const t = k / (sub + 1);
+          for (const [x, y] of [[cx + t * s, cy], [cx, cy + t * s]]) {
+            for (const [dx, dy] of wrapOffsets(x, y, dotR + 1, dotR + 1, w, h))
+              conn += dot(x + dx, y + dy, dotR, 'circle', C.fg);
+          }
+        }
+      }
+      /* 十字层：图案色 */
+      let cross = '';
+      cross += line(cx - a, cy, cx + a, cy, C.fg, csw);
+      cross += line(cx, cy - a, cx, cy + a, C.fg, csw);
+      const dim = (svg, op) => (op >= 0.999 ? svg : `<g opacity="${f(op)}">${svg}</g>`);
+      return { w, h, svg: dim(conn, lB) + dim(cross, cB) };
+    },
+    params: [
+      { k: 'size', label: '十字长度 %', t: 'range', min: 8, max: 60, step: 1, def: 18 },
+      { k: 'csw', label: '十字线宽', t: 'range', min: 0.2, max: 4, step: 0.1, def: 1.2 },
+      { k: 'crossBright', label: '十字亮度 %', t: 'range', min: 0, max: 100, step: 1, def: 100 },
+      { k: 'conn', label: '连接方式', t: 'select', def: 'line', opts: [['line', '连线'], ['dot', '点']] },
+      { k: 'lw', label: '连线线宽', t: 'range', min: 0.2, max: 3, step: 0.1, def: 0.6, when: P => P.conn !== 'dot' },
+      { k: 'sub', label: '点密度', t: 'range', min: 1, max: 6, step: 1, def: 1, when: P => P.conn !== 'line' },
+      { k: 'dotR', label: '点半径', t: 'range', min: 0.3, max: 8, step: 0.1, def: 1.2, when: P => P.conn !== 'line' },
+      { k: 'connBright', label: '点线亮度 %', t: 'range', min: 0, max: 100, step: 1, def: 50 },
+    ]
+  },
+
+  {
+    id: 'halftone', name: '半调网格', cat: '科技 / Tech', image: true,
+    tile(P, C, size) {
+      const img = ensureImage('halftone');
+      const outW = size;
+      const outH = Math.max(1, Math.round(size * img.aspect));
+      const cols = clamp(Math.round(P.cols), 8, 240);
+      const rows = Math.max(1, Math.round(cols * img.aspect));
+      const cw = outW / cols, ch = outH / rows;
+      const cell = Math.min(cw, ch);
+      const contrast = clamp(P.contrast, 0.2, 3);
+      const maxR = cell * 0.5 * clamp(P.dotSize, 0.1, 1.1);
+      let svg = '';
+      for (let j = 0; j < rows; j++) {
+        for (let i = 0; i < cols; i++) {
+          const u = (i + 0.5) / cols, v = (j + 0.5) / rows;
+          const lum = sampleImage(img, u, v) / 255;
+          let ink = clamp(0.5 + (0.5 - lum) * contrast, 0, 1);
+          if (P.invert) ink = 1 - ink;
+          const r = maxR * (0.07 + 0.93 * ink);
+          if (r < 0.2) continue;
+          svg += dot((i + 0.5) * cw, (j + 0.5) * ch, r, P.shape, C.fg);
+        }
+      }
+      return { w: outW, h: outH, svg };
+    },
+    params: [
+      { k: 'img', label: '图片', t: 'file', def: null },
+      { k: 'cols', label: '网点密度', t: 'range', min: 24, max: 160, step: 1, def: 134 },
+      { k: 'dotSize', label: '最大点径', t: 'range', min: 0.3, max: 1.1, step: 0.01, def: 0.95 },
+      { k: 'contrast', label: '对比度', t: 'range', min: 0.5, max: 2, step: 0.05, def: 1.05 },
+      { k: 'shape', label: '网点形状', t: 'select', def: 'circle', opts: [['circle', '圆点'], ['square', '方点'], ['diamond', '菱形']] },
+      { k: 'invert', label: '反相', t: 'check', def: false },
+    ]
+  },
+
+  /* ========== 工业 / Industrial ========== */
+  {
+    id: 'escher-hex', name: '埃舍尔六角', cat: '工业 / Industrial',
+    note: '六边形的三组对边共用同一条位移曲线，图形互相咬合、严丝合缝（埃舍尔「正规分割」）。'
+      + '边位移默认 0 即正六边形平铺；往上调开始互锁，C3 更像生物、C6 更像晶体。'
+      + '振幅过大时会自动收缩，保证图形不自交（自交会导致平铺重叠）。',
+    tile(P, C) {
+      const R = P.size;
+      const w = 3 * R, h = Math.sqrt(3) * R;
+      const A = waveFn(P.shape, P.amp / 100 * R, P.freq, P.env, P.phase, P.seed);
+      const anti = antisym(A);
+      const dFn = P.sym === 'c6'
+        ? ((i, t) => anti(t))
+        : (i, t) => (i % 2 === 0 ? A(t) : -A(1 - t));
+      const V = [];
+      for (let k = 0; k < 6; k++) V.push({ x: R * Math.cos(rad(60 * k)), y: R * Math.sin(rad(60 * k)) });
+      const pts = interlockShape(V, dFn, P.smooth);
+      const t2 = { x: 1.5 * R, y: Math.sqrt(3) / 2 * R };
+      const shapes = [
+        { pts, col: C.fg },
+        { pts: pts.map(p => ({ x: p.x + t2.x, y: p.y + t2.y })), col: C.fg },
+      ];
+      let svg = drawShapes(shapes, w, h, P.mode, P.sw, C.bg);
+      if (P.eye) {
+        const order = P.sym === 'c6' ? 6 : 3;
+        /* 「眼睛」不再用强调色：实心模式用背景色挖孔（读成打孔），描边模式用图案色小点 */
+        const eyeCol = P.mode === 'outline' ? C.fg : C.bg;
+        const cs = [[0, 0], [t2.x, t2.y]];
+        for (let n = 0; n < shapes.length; n++) {
+          svg += symmetryDots(cs[n][0], cs[n][1], 0.3 * R, 0, 0.062 * R, order,
+            eyeCol, w, h, bboxOf(shapes[n].pts));
+        }
+      }
+      return { w, h, svg, polys: shapes.map(s => s.pts) };
+    },
+    params: [
+      { k: 'size', label: '六边形半径', t: 'range', min: 10, max: 90, step: 1, def: 58 },
+      { k: 'amp', label: '边位移 %', t: 'range', min: 0, max: 45, step: 1, def: 0, reRender: true },
+      { k: 'shape', label: '边型', t: 'select', def: 'organic', opts: [['organic', '有机'], ['sine', '波纹'], ['arch', '拱'], ['saw', '锯齿'], ['step', '阶梯'], ['hook', '钩']], when: P => P.amp > 0 },
+      { k: 'freq', label: '波数', t: 'range', min: 1, max: 5, step: 1, def: 2, when: P => P.amp > 0 && P.shape !== 'arch' },
+      { k: 'env', label: '包络指数', t: 'range', min: 0.5, max: 3, step: 0.1, def: 1.1, when: P => P.amp > 0 },
+      { k: 'phase', label: '相位', t: 'range', min: 0, max: 1, step: 0.02, def: 0, when: P => P.amp > 0 && P.shape !== 'arch' && P.shape !== 'organic' },
+      { k: 'sym', label: '对称', t: 'select', def: 'c3', opts: [['c3', 'C3 三重'], ['c6', 'C6 六重']], when: P => P.amp > 0 },
+      { k: 'mode', label: '绘制', t: 'select', def: 'fill', opts: [['fill', '实心 + 勾缝'], ['outline', '描边']] },
+      { k: 'smooth', label: '曲线精度', t: 'range', min: 6, max: 40, step: 1, def: 22, when: P => P.amp > 0 },
+      { k: 'sw', label: '线宽 / 缝补', t: 'range', min: 0.2, max: 6, step: 0.1, def: 1.6 },
+      { k: 'seed', label: '随机种子', t: 'range', min: 1, max: 99, step: 1, def: 12, when: P => P.amp > 0 && P.shape === 'organic' },
+      { k: 'eye', label: '加眼睛（生物感）', t: 'check', def: false },
+    ]
+  },
+
+  {
+    id: 'truchet', name: 'Truchet 瓷砖', cat: '工业 / Industrial',
+    note: '每格两条四分之一圆弧，端点都落在格边中点上 —— 所以无论随机成什么样子，'
+      + '相邻格的弧线都能首尾相接。无缝是结构性保证，随机只是改变连通方式。',
+    tile(P, C) {
+      const n = Math.max(2, Math.round(P.cells));
+      const s = P.size, w = s * n, h = s * n;
+      const r = rng(P.seed), R = s / 2;
+      const arc = (cx, cy, a0, col) => {
+        const a = rad(a0), b = rad(a0 + 90);
+        return `<path d="M${f(cx + Math.cos(a) * R)} ${f(cy + Math.sin(a) * R)}`
+          + `A${f(R)} ${f(R)} 0 0 1 ${f(cx + Math.cos(b) * R)} ${f(cy + Math.sin(b) * R)}"`
+          + ` fill="none" stroke="${col}" stroke-width="${f(P.sw)}" stroke-linecap="round"/>`;
+      };
+      let out = '';
+      for (let i = 0; i < n; i++) {
+        for (let j = 0; j < n; j++) {
+          const x = i * s, y = j * s;
+          const flip = P.layout === 'diag' ? (i + j) % 2 === 0
+            : P.layout === 'grid' ? true : r() < 0.5;
+          /* 「明暗交替」：用图案色 + 降透明度做出两档明度（不再有强调色） */
+          const dim = P.alt && (i + j) % 2 === 1;
+          const cell = flip
+            ? arc(x, y, 0, C.fg) + arc(x + s, y + s, 180, C.fg)
+            : arc(x + s, y, 90, C.fg) + arc(x, y + s, 270, C.fg);
+          out += dim ? `<g opacity="0.45">${cell}</g>` : cell;
+        }
+      }
+      return { w, h, svg: out };
+    },
+    params: [
+      { k: 'size', label: '格尺寸', t: 'range', min: 12, max: 90, step: 1, def: 30 },
+      { k: 'cells', label: '格数', t: 'range', min: 2, max: 10, step: 1, def: 6 },
+      { k: 'sw', label: '线宽', t: 'range', min: 0.4, max: 10, step: 0.2, def: 2.4 },
+      { k: 'layout', label: '排布', t: 'select', def: 'random', opts: [['random', '随机'], ['diag', '对角'], ['grid', '同向']] },
+      { k: 'alt', label: '双色交替', t: 'check', def: false },
+      { k: 'seed', label: '随机种子', t: 'range', min: 1, max: 999, step: 1, def: 23, when: P => P.layout === 'random' },
+    ]
+  },
+
+  {
+    id: 'scale-armor', name: '铠甲鳞片', cat: '工业 / Industrial',
+    note: '鱼鳞 / 铠甲式重叠铺砌：每行错开半片，上一行盖住下一行的上缘，'
+      + '露出来的是每片底部的圆弧。曲率 ≥ 1 时横向相接，片身长度决定纵向是否留空档。',
+    tile(P, C) {
+      const sw = P.size, rh = sw * P.rowH;
+      const w = 2 * sw, h = rh;
+      const r = sw / 2 * P.curve, bh = Math.max(rh * P.body, rh - r + 0.5);
+      const N = 16, items = [];
+      for (let j = -2; j <= 2; j++) {
+        const off = (((j % 2) + 2) % 2) ? sw / 2 : 0;   // 错开半片
+        for (let i = -1; i <= 2; i++) {
+          const cx = i * sw + off, cy = j * rh;
+          const pts = [];
+          for (let k = 0; k <= N; k++) {
+            const th = Math.PI * k / N;
+            pts.push({ x: cx - r * Math.cos(th), y: cy + r * Math.sin(th) });
+          }
+          pts.push({ x: cx + r, y: cy - bh }, { x: cx - r, y: cy - bh });
+          for (const [dx, dy] of latticeOffsets(bboxOf(pts), w, h)) {
+            items.push({ pts: pts.map(p => ({ x: p.x + dx, y: p.y + dy })), y: cy + dy });
+          }
+        }
+      }
+      items.sort((a, b) => b.y - a.y);
+      let svg = '';
+      for (const it of items) svg += pathFrom(it.pts, C.fg, C.bg, P.sw);
+      return { w, h, svg };
+    },
+    params: [
+      { k: 'size', label: '鳞片宽', t: 'range', min: 8, max: 70, step: 1, def: 26 },
+      { k: 'rowH', label: '行高比例', t: 'range', min: 0.3, max: 1, step: 0.02, def: 0.72 },
+      { k: 'curve', label: '弧顶曲率', t: 'range', min: 0.8, max: 1.5, step: 0.02, def: 1.1 },
+      { k: 'body', label: '片身长度', t: 'range', min: 0.2, max: 1.4, step: 0.02, def: 0.8 },
+      { k: 'sw', label: '缝补线宽', t: 'range', min: 0.2, max: 4, step: 0.1, def: 0.8 },
+    ]
+  },
+
+  {
+    id: 'square-grid', name: '方格网', cat: '工业 / Industrial',
+    tile(P, C) {
+      const m = Math.max(1, Math.round(P.major));
+      const sp = 16, w = sp * m, h = sp * m;
+      /* 细线 / 主格线分成两批，各自可以单独压暗（明度 % = 叠加在黑底上的不透明度） */
+      let thin = '', major = '';
+      for (let i = 0; i < m; i++) {
+        const x = i * sp;
+        if (i === 0) {
+          major += line(x, 0, x, h, C.fg, P.sw * P.majorW);
+          major += line(0, x, w, x, C.fg, P.sw * P.majorW);
+        } else {
+          thin += line(x, 0, x, h, C.fg, P.sw);
+          thin += line(0, x, w, x, C.fg, P.sw);
+        }
+      }
+      // 平铺边界上的主格线：本 tile 画的 x=0 / y=0 线有一半落在 tile 外，
+      // 必须在右/下边界补绘，否则每隔一个周期的主格线只有半宽（实测 1.8px → 0.9px）。
+      major += line(w, 0, w, h, C.fg, P.sw * P.majorW);
+      major += line(0, h, w, h, C.fg, P.sw * P.majorW);
+      const dim = (svg, pct) => {
+        const op = clamp(pct, 0, 100) / 100;
+        return op >= 0.999 ? svg : `<g opacity="${f(op)}">${svg}</g>`;
+      };
+      return { w, h, svg: dim(thin, P.thinBright) + dim(major, P.majorBright) };
+    },
+    params: [
+      { k: 'sw', label: '细线宽', t: 'range', min: 0.2, max: 6, step: 0.1, def: 0.6, when: P => P.major > 1 },
+      { k: 'thinBright', label: '细线明度 %', t: 'range', min: 0, max: 100, step: 1, def: 60, when: P => P.major > 1 },
+      { k: 'major', label: '主格倍数', t: 'range', min: 1, max: 12, step: 1, def: 12, reRender: true },
+      { k: 'majorW', label: '主格线宽倍率', t: 'range', min: 1, max: 8, step: 0.2, def: 3 },
+      { k: 'majorBright', label: '主格线明度 %', t: 'range', min: 0, max: 100, step: 1, def: 100 },
+    ]
+  },
+
+  {
+    id: 'wire-mesh', name: '金属网', cat: '工业 / Industrial',
+    tile(P, C) {
+      const s = 16, w = s, h = s;
+      let out = '';
+      out += line(0, 0, w, h, C.fg, P.sw);
+      out += line(0, h, w, 0, C.fg, P.sw);
+      return { w, h, svg: out };
+    },
+    params: [
+      { k: 'sw', label: '线宽', t: 'range', min: 0.2, max: 5, step: 0.1, def: 0.8 },
+    ]
+  },
+
+  /* 三向交错：三组朝向的短棒在三角格点上交错排布
+     —— 由参考图（reference/7fdd37387528310e205c71cc776e89c0.jpg）实测反解：
+        · 平移点阵是三角/六方格，矩形基本域 41.5 × 75，域内 6 根亮块；
+        · 亮块是 23.8 × 4.8 的短棒，只有 3 个朝向（30° / 90° / 150°），
+          整幅图约 640 根，全是被黑线隔出的白色小棒；
+        · 6 根棒分成两组「120° 簇」：每组 3 根（各占一个朝向），绕同一中心
+          按 120° 均分、半径 ≈ 10.8；两组中心相距 23.98（≈ 41.5/√3）、
+          初相相差 ≈ 57° —— 两簇互相穿插，三组朝向的短棒因此在同一格点上交错。
+     几何来源与验证：.test/trifork2/（analysis.md + harness.mjs + candidates.js）
+     参考图里白色短棒是「图形」（873 个互不相连的孤岛），黑线是「底」
+     （全图只有 1 个连通域、占 57%）—— 所以图案用 fg 画短棒，而不是画黑网。 */
+  {
+    id: 'trifork', name: '三向交错', cat: '工业 / Industrial',
+    note: '三组朝向（30° / 90° / 150°）的短棒在三角格点上交错排布：'
+      + '每单元两组 120° 簇，3 根棒绕同一中心均分，两组错开 57° 相位互相穿插。'
+      + '簇张开 = 三根棒到簇中心的距离；臂长 / 臂宽控制单根棒的比例。',
+    tile(P, C) {
+      /* 实测常量：坐标系以 41.5 宽的单元为基准，H/W = 75/41.5 */
+      const S = clamp(P.size, 14, 120);                 // 单元宽（px）
+      const W = S, H = S * 1.8072;                      // 单元高
+      const u = S / 41.5;                               // 换算到实测坐标系
+      const L = S * clamp(P.arm, 12, 92) / 100;         // 臂长（短棒长）
+      const bw = S * clamp(P.width, 2.5, 42) / 100;     // 臂宽（短棒宽）
+      const sp = clamp(P.spread, 55, 165) / 100;        // 簇张开：三根棒到簇中心的半径倍率
+      /* 两组 120° 簇：中心（单元坐标系，已折进单元）、半径、初相（实测） */
+      const TRI = [
+        { x: 26.3746, y: 64.0350, r: 10.7486, phi: 65.336 },
+        { x: 5.8826,  y: 51.5863, r: 10.8735, phi: 8.302  },
+      ];
+      /* 6 根臂：[簇号, 第 k 臂, 该棒朝向] —— 朝向恒为 30° / 90° / 150° */
+      const ARMS = [
+        [0, 0, 30], [0, 1, 150], [0, 2, 90],
+        [1, 0, 150], [1, 1, 90], [1, 2, 30],
+      ];
+      /* 一根臂 = 以 (cx,cy) 为中心、朝 ang、长 L、宽 bw 的矩形 */
+      const quad = (cx, cy, ang) => {
+        const th = rad(ang), dx = Math.cos(th), dy = Math.sin(th);
+        const nx = -dy, ny = dx, hl = L / 2, hw = bw / 2;
+        return [
+          { x: cx + dx * hl + nx * hw, y: cy + dy * hl + ny * hw },
+          { x: cx + dx * hl - nx * hw, y: cy + dy * hl - ny * hw },
+          { x: cx - dx * hl - nx * hw, y: cy - dy * hl - ny * hw },
+          { x: cx - dx * hl + nx * hw, y: cy - dy * hl + ny * hw },
+        ];
+      };
+      const out = [], polys = [];
+      const paint = q => {
+        /* 跨 tile 边界的副本补绘到对面 → 结构性四方连续 */
+        for (const [dx, dy] of latticeOffsets(bboxOf(q), W, H)) {
+          out.push(polyPath(q.map(p => ({ x: p.x + dx, y: p.y + dy })), C.fg));
+        }
+        polys.push(q);
+      };
+      const bricks = [];
+      for (const [ti, k, ang] of ARMS) {
+        const T = TRI[ti];
+        const th = rad(T.phi + 120 * k);
+        bricks.push([
+          u * (T.x + sp * T.r * Math.cos(th)),
+          u * (T.y + sp * T.r * Math.sin(th)),
+          ang,
+        ]);
+      }
+      /* 矩形基本域 = 2 个三角基本域：整体再平移 (W/2, H/2) 补一份 → 每域 12 根 */
+      for (const [bx, by, ang] of bricks.concat(bricks.map(([x, y, a]) => [x + W / 2, y + H / 2, a]))) {
+        paint(quad(((bx % W) + W) % W, ((by % H) + H) % H, ang));
+      }
+      return { w: f6(W), h: f6(H), svg: out.join(''), polys };
+    },
+    params: [
+      { k: 'size',   label: '单元格距',   t: 'range', min: 14, max: 120, step: 0.5, def: 41.5 },
+      { k: 'arm',    label: '臂长 %',     t: 'range', min: 12, max: 92,  step: 1,   def: 57 },
+      { k: 'width',  label: '臂宽 %',     t: 'range', min: 2.5, max: 42, step: 0.5, def: 8 },
+      { k: 'spread', label: '簇张开 %',   t: 'range', min: 55, max: 165, step: 1,   def: 100 },
+    ],
+  },
+
+  {
+    id: 'diamond-plate', name: '钻石防滑纹', cat: '工业 / Industrial',
+    tile(P, C) {
+      const s = 44, w = s, h = s;
+      const a = s * P.size / 100 / 2;
+      const b = a * P.flat;
+      // 真实防滑板：两组方向相反的菱形交错，而不是同一方向的点阵
+      const shape = (cx, cy, vert) => {
+        const d = vert
+          ? `M${f(cx)} ${f(cy - a)}L${f(cx + b)} ${f(cy)}L${f(cx)} ${f(cy + a)}L${f(cx - b)} ${f(cy)}Z`
+          : `M${f(cx - a)} ${f(cy)}L${f(cx)} ${f(cy - b)}L${f(cx + a)} ${f(cy)}L${f(cx)} ${f(cy + b)}Z`;
+        return `<path d="${d}" fill="${P.fill ? C.fg : 'none'}" stroke="${C.fg}" stroke-width="${f(P.sw)}"/>`;
+      };
+      let out = '';
+      for (const [cx, cy, vert] of [[0, 0, false], [s / 2, s / 2, true]]) {
+        for (const [dx, dy] of wrapOffsets(cx, cy, a + P.sw, a + P.sw, w, h))
+          out += shape(cx + dx, cy + dy, vert);
+      }
+      return { w, h, svg: out };
+    },
+    params: [
+      { k: 'size', label: '菱形长度 %', t: 'range', min: 10, max: 100, step: 1, def: 50 },
+      { k: 'flat', label: '菱形扁度', t: 'range', min: 0.15, max: 1, step: 0.05, def: 0.42 },
+      { k: 'sw', label: '线宽', t: 'range', min: 0.2, max: 5, step: 0.1, def: 0.9 },
+      { k: 'fill', label: '填充方式', t: 'check', def: true },
+    ]
+  },
+
+  {
+    id: 'perforated', name: '冲孔金属', cat: '工业 / Industrial',
+    tile(P, C) {
+      const s = 26, r0 = P.r;
+      const hex = P.hex;
+      const w = hex ? 2 * s : s, h = hex ? s * Math.sqrt(3) : s;
+      const pts = hex ? [[0, 0], [s, h / 2]] : [[0, 0]];
+      let out = '';
+      for (const [x, y] of pts) {
+        /* 用 latticeOffsets（多周期补绘）而不是 wrapOffsets：孔半径可以大于 tile 边长，
+           一个大圆会同时越过多条 tile 边界，单周期补绘会漏掉 ±2 周期的副本 → 接缝空洞。 */
+        const bb = { x0: x - r0 - P.sw, y0: y - r0 - P.sw, x1: x + r0 + P.sw, y1: y + r0 + P.sw };
+        for (const [dx, dy] of latticeOffsets(bb, w, h)) {
+          /* 跟钻石防滑纹同一套逻辑：线框 = 只描边；实心 = 用图案色填满孔（不是填背景色） */
+          if (P.solid) out += circle(x + dx, y + dy, r0, C.fg);
+          out += circle(x + dx, y + dy, r0, 'none', C.fg, P.sw);
+        }
+      }
+      return { w, h, svg: out };
+    },
+    params: [
+      { k: 'r', label: '孔半径', t: 'range', min: 0.5, max: 40, step: 0.5, def: 8 },
+      { k: 'sw', label: '孔边线宽', t: 'range', min: 0.2, max: 4, step: 0.1, def: 0.7 },
+      { k: 'hex', label: '六角错排', t: 'check', def: true },
+      { k: 'solid', label: '孔内填充', t: 'check', def: false },
+    ]
+  },
+];
+
+/* ============================================================
+   语言（中 / EN）
+   与 particle-collage / particle-pointcloud / gradient-flow 同一套做法：
+     · 静态文案：HTML 上标 data-i18n / data-i18n-title / data-i18n-aria / data-i18n-ph，
+       applyLangStatic() 一次替换四个通道；
+     · 动态文案（图案名 / 参数标签 / 选项 / 读数 / toast / 导出）：applyLang() 调
+       refreshI18NText() 重算；
+     · 图案数据（14 个图案的名称、参数标签、选项与开关两端标签）走 PAT_I18N，
+       按「图案 id → 参数键」取词，不把英文塞进 tile 生成代码里；
+     · 偏好存 localStorage['ttl.lang']；隐藏的 <select id="lang"> 是真值源，
+       左面板头部的 .seg.lang-seg 只是它的外观（bindSeg 把点击转成 change）。
+   ============================================================ */
+const I18N = {
+  zh: {
+    docTitle: '常用纹理图案生成工具',
+    appTitle: '常用纹理图案生成工具',
+    langLabel: '语言 / Language',
+    panelChip: '显示面板',
+    aStage: '图案预览', aPanelLib: '图案库', aPanelParams: '参数面板',
+    aSearch: '搜索图案', phSearch: '搜索图案 / 分类…',
+    tResetAll: '复位当前图案全部参数',
+    tHidePanels: '隐藏面板（H）', aHidePanels: '隐藏面板',
+    gParams: '图案参数', gColors: '配色', gExport: '预览与导出',
+    lTiles: '平铺数量', tResetTiles: '恢复推荐值',
+    reset: '复位到默认值',
+    lBgColor: '背景色', tResetBg: '复位到默认黑底',
+    lFgColor: '图案色', tResetFg: '复位到默认 #A8B7FF',
+    lBg: '背景', tResetTrans: '复位为不透明', aTrans: '背景透明度',
+    oOpaque: '不透明', oTransparent: '透明',
+    lSize: '导出尺寸', tResetSize: '复位到 1024', aSize: '导出尺寸',
+    btnExpSvg: '导出 SVG（矢量）', btnExpPng: '导出 PNG',
+    tResetImg: '恢复默认图（头像）', btnUploadImg: '上传图片',
+    imgAvatar: '头像', imgSample: '示例图',
+    libEmpty: '没有匹配的图案。<br>试试「点阵」「六角」「金属」。',
+    tImgFail: '图片读取失败',
+    tResetDone: '已复位当前图案参数',
+    tSvgDone: (w, h) => `已导出 SVG · ${w} × ${h}`,
+    tPngDone: (w, h) => `已导出 PNG · ${w} × ${h}`,
+    tExportFail: '导出失败', tRasterFail: '光栅化失败',
+    tSizeTitleImg: '左侧是导出尺寸（宽），右侧是实际输出（按图片比例）',
+    tSizeTitleTile: '左侧是导出尺寸目标；实际输出为整数个完整 tile（周边按 tile 边界裁切）',
+    tileInfoImg: (name, w, h, cols) => `${name} ${w} × ${h} · ${cols} 列网点`,
+    tileInfoTile: (n, m, w, h) => `${n} × ${m} tile · 平铺 ${w} × ${h}`,
+  },
+  en: {
+    docTitle: 'Texture Pattern Generator',
+    appTitle: 'Texture Pattern Generator',
+    langLabel: 'Language',
+    panelChip: 'Show panels',
+    aStage: 'Pattern preview', aPanelLib: 'Pattern library', aPanelParams: 'Parameters',
+    aSearch: 'Search patterns', phSearch: 'Search patterns / categories…',
+    tResetAll: 'Reset all parameters of the current pattern',
+    tHidePanels: 'Hide panels (H)', aHidePanels: 'Hide panels',
+    gParams: 'Pattern parameters', gColors: 'Colors', gExport: 'Preview & export',
+    lTiles: 'Tile count', tResetTiles: 'Restore recommended count',
+    reset: 'Reset to default',
+    lBgColor: 'Background color', tResetBg: 'Reset to default black',
+    lFgColor: 'Pattern color', tResetFg: 'Reset to default #A8B7FF',
+    lBg: 'Background', tResetTrans: 'Reset to opaque', aTrans: 'Background opacity',
+    oOpaque: 'Opaque', oTransparent: 'Transparent',
+    lSize: 'Export size', tResetSize: 'Reset to 1024', aSize: 'Export size',
+    btnExpSvg: 'Export SVG (vector)', btnExpPng: 'Export PNG',
+    tResetImg: 'Restore default image (Avatar)', btnUploadImg: 'Upload image',
+    imgAvatar: 'Avatar', imgSample: 'Sample image',
+    libEmpty: 'No matching patterns.<br>Try “dots”, “hex”, “metal”.',
+    tImgFail: 'Could not read the image',
+    tResetDone: 'Current pattern reset to defaults',
+    tSvgDone: (w, h) => `SVG exported · ${w} × ${h}`,
+    tPngDone: (w, h) => `PNG exported · ${w} × ${h}`,
+    tExportFail: 'Export failed', tRasterFail: 'Rasterization failed',
+    tSizeTitleImg: 'Left = export width; right = actual output (image aspect ratio)',
+    tSizeTitleTile: 'Left = target export size; output = a whole number of complete tiles (cropped to tile edges)',
+    tileInfoImg: (name, w, h, cols) => `${name} ${w} × ${h} · ${cols} dot columns`,
+    tileInfoTile: (n, m, w, h) => `${n} × ${m} tiles · tile size ${w} × ${h}`,
+  },
+};
+
+/* 图案数据的英文词条：name = 图案名；p = 参数键 → 标签；o = 参数键 → { 选项值: 标签 }；
+   c = 参数键 → [关, 开]（仅 check 参数）。齐全性由 .test/pup/i18n_verify.mjs 校验，
+   新增图案 / 参数时补这里，否则英文界面会回退成中文（测试会报缺）。 */
+const PAT_I18N = {
+  en: {
+    /* ---- 科技 / Tech ---- */
+    'dot-circle': {
+      name: 'Circle Dots',
+      p: { r: 'Dot radius', stagger: 'Arrangement', rand: 'Random brightness %', seed: 'Seed' },
+      c: { stagger: ['Aligned', 'Staggered'] },
+    },
+    'dot-square': {
+      name: 'Square Dots',
+      p: { r: 'Dot radius', stagger: 'Arrangement', rand: 'Random brightness %', seed: 'Seed' },
+      c: { stagger: ['Aligned', 'Staggered'] },
+    },
+    'dot-diamond': {
+      name: 'Diamond Dots',
+      p: { r: 'Dot radius', stagger: 'Arrangement', rand: 'Random brightness %', seed: 'Seed' },
+      c: { stagger: ['Aligned', 'Staggered'] },
+    },
+    'crosshair': {
+      name: 'Crosshair',
+      p: { size: 'Crosshair size %', gap: 'Center gap %', sw: 'Line width', center: 'Center dot' },
+      c: { center: ['Off', 'On'] },
+    },
+    'crossline': {
+      name: 'Cross Connections',
+      p: {
+        size: 'Cross length %', csw: 'Cross stroke width', crossBright: 'Cross brightness %',
+        conn: 'Connection', lw: 'Connector width', sub: 'Dots between',
+        dotR: 'Dot radius', connBright: 'Connector brightness %',
+      },
+      o: { conn: { line: 'Lines', dot: 'Dots' } },
+    },
+    'halftone': {
+      name: 'Halftone Grid',
+      p: {
+        img: 'Image', cols: 'Screen columns', dotSize: 'Max dot scale',
+        contrast: 'Contrast', shape: 'Dot shape', invert: 'Invert',
+      },
+      o: { shape: { circle: 'Circle', square: 'Square', diamond: 'Diamond' } },
+      c: { invert: ['Normal', 'Invert'] },
+    },
+    /* ---- 工业 / Industrial ---- */
+    'escher-hex': {
+      name: 'Escher Hexagon',
+      p: {
+        size: 'Hex radius', amp: 'Edge offset %', shape: 'Edge style', freq: 'Wave count',
+        env: 'Envelope exponent', phase: 'Phase', sym: 'Symmetry', mode: 'Drawing mode',
+        smooth: 'Curve precision', sw: 'Line width / seam', seed: 'Seed', eye: 'Eyes (organic)',
+      },
+      o: {
+        shape: { organic: 'Organic', sine: 'Wave', arch: 'Arch', saw: 'Saw', step: 'Steps', hook: 'Hook' },
+        sym: { c3: 'C3 (3-fold)', c6: 'C6 (6-fold)' },
+        mode: { fill: 'Solid + seams', outline: 'Outline' },
+      },
+      c: { eye: ['None', 'Eyes'] },
+    },
+    'truchet': {
+      name: 'Truchet Tiles',
+      p: { size: 'Cell size', cells: 'Cell count', sw: 'Line width', layout: 'Layout', alt: 'Light/dark alternate', seed: 'Seed' },
+      o: { layout: { random: 'Random', diag: 'Diagonal', grid: 'Aligned' } },
+      c: { alt: ['Mono', 'Alternate'] },
+    },
+    'scale-armor': {
+      name: 'Scale Armor',
+      p: { size: 'Scale width', rowH: 'Row height ratio', curve: 'Dome curvature', body: 'Scale length', sw: 'Seam width' },
+    },
+    'square-grid': {
+      name: 'Square Grid',
+      p: {
+        sw: 'Thin line width', thinBright: 'Thin line brightness %', major: 'Major interval',
+        majorW: 'Major width multiplier', majorBright: 'Major line brightness %',
+      },
+    },
+    'wire-mesh': {
+      name: 'Metal Mesh',
+      p: { sw: 'Line width' },
+    },
+    'trifork': {
+      name: 'Three-way Interlace',
+      p: { size: 'Cell spacing', arm: 'Arm length %', width: 'Arm width %', spread: 'Cluster spread %' },
+    },
+    'diamond-plate': {
+      name: 'Diamond Plate',
+      p: { size: 'Diamond length %', flat: 'Diamond flatness', sw: 'Line width', fill: 'Fill mode' },
+      c: { fill: ['Outline', 'Solid'] },
+    },
+    'perforated': {
+      name: 'Perforated Metal',
+      p: { r: 'Hole radius', sw: 'Hole edge width', hex: 'Hole layout', solid: 'Hole style' },
+      c: { hex: ['Grid', 'Staggered hex'], solid: ['Outline', 'Solid'] },
+    },
+  },
+};
+
+let LANG = 'zh';
+try { const saved = localStorage.getItem('ttl.lang'); if (saved === 'en' || saved === 'zh') LANG = saved; } catch (e) { /* 隐私模式下忽略 */ }
+const tr = k => (I18N[LANG] && I18N[LANG][k] !== undefined) ? I18N[LANG][k]
+  : (I18N.zh[k] !== undefined ? I18N.zh[k] : k);
+/* 模板词条（值可能是函数）：tf('tSvgDone', w, h) */
+const tf = (k, ...args) => { const v = tr(k); return typeof v === 'function' ? v(...args) : v; };
+
+/** 图案 / 参数的英文取词（缺词条时回退中文；i18n_verify 会报缺） */
+const patEN = id => (LANG === 'en' ? (PAT_I18N.en[id] || null) : null);
+const patName = pat => { const e = patEN(pat.id); return (e && e.name) || pat.name; };
+const paramLabel = (pat, p) => { const e = patEN(pat.id); return (e && e.p && e.p[p.k]) || p.label; };
+const optLabel = (pat, p, v, fallback) => {
+  const e = patEN(pat.id);
+  return (e && e.o && e.o[p.k] && e.o[p.k][v]) || fallback;
+};
+const checkPair = (pat, p) => {
+  const e = patEN(pat.id);
+  if (e && e.c && e.c[p.k]) return e.c[p.k];
+  if (LANG === 'en') return ['Off', 'On'];
+  return CHECK_LABELS[pat.id + '.' + p.k] || ['关闭', '开启'];
+};
+
+/* ============================================================
+   状态
+   ============================================================ */
+const state = {
+  patternId: 'dot-circle',
+  query: '',
+  params: {},
+  colors: { bg: '#000000', fg: '#a8b7ff', transparent: false },
+  size: 1024,
+  tiles: {},
+  panels: true,
+};
+
+const SIZES = [512, 1024, 2048, 4096];
+const DEFAULTS = {
+  colors: { bg: '#000000', fg: '#a8b7ff' },
+  size: 1024,
+};
+
+const SNAP_MARGIN = 0.03;   // 完整 tile 区四周留白 = 较大边长的 3%
+const SNAP_MAX = 64;        // 平铺数量上限
+
+const CAT_META = {
+  '科技 / Tech': { no: '01', name: '科技', en: 'TECH' },
+  '工业 / Industrial': { no: '02', name: '工业', en: 'INDUSTRIAL' },
+};
+
+/* 布尔参数在分段控件里的成对标签（默认「关闭 / 开启」） */
+const CHECK_LABELS = {
+  'dot-circle.stagger': ['对齐', '交错'],
+  'dot-square.stagger': ['对齐', '交错'],
+  'dot-diamond.stagger': ['对齐', '交错'],
+  'escher-hex.eye': ['无', '加眼睛'],
+  'truchet.alt': ['单色', '明暗交替'],
+  'diamond-plate.fill': ['线框', '实心'],
+  'perforated.hex': ['方形排布', '六角错排'],
+  'perforated.solid': ['线框', '实心'],
+  'halftone.invert': ['正常', '反相'],
+};
+
+const cur = () => PATTERNS.find(p => p.id === state.patternId) || PATTERNS[0];
+
+function paramsOf(pat) {
+  if (!state.params[pat.id]) {
+    const o = {};
+    for (const p of pat.params) o[p.k] = p.def;
+    state.params[pat.id] = o;
+  }
+  return state.params[pat.id];
+}
+
+/** 取某个图案的一个 tile（测试与导出共用；override 可临时覆盖参数） */
+function tileFor(id, override) {
+  const pat = PATTERNS.find(p => p.id === id);
+  if (!pat) return null;
+  const P = Object.assign({}, paramsOf(pat), override || {});
+  const C = state.colors;
+  let t;
+  try {
+    t = pat.tile(P, C, state.size, state.size);
+  } catch (e) {
+    console.error('[tile error]', id, e);
+    return null;
+  }
+  let w = Number(t.w), h = Number(t.h);
+  if (!isFinite(w) || w <= 0) w = state.size;
+  if (!isFinite(h) || h <= 0) h = state.size;
+  return { id, pat, params: P, C, w, h, svg: t.svg, polys: t.polys };
+}
+
+/** 当前图案的 tile */
+function tileInfo() {
+  const t = tileFor(state.patternId);
+  return t || { id: state.patternId, pat: cur(), C: state.colors, w: state.size, h: state.size, svg: '' };
+}
+
+/* ============================================================
+   整 tile 平铺对齐
+   ============================================================ */
+/** 推荐 tile 数：让完整 tile 区尽量接近正方形，缩放尽量接近 100% */
+function defaultTiles(t) {
+  const size = state.size;
+  let best = null;
+  for (let n = 1; n <= SNAP_MAX; n++) {
+    const m = Math.max(1, Math.round(n * t.w / t.h));
+    const pw = n * t.w, ph = m * t.h;
+    const zoom = size / (Math.max(pw, ph) * (1 + 2 * SNAP_MARGIN));
+    if (zoom < 0.55 || zoom > 1.6) continue;
+    const aspect = Math.abs(pw - ph) / Math.max(pw, ph);
+    const score = aspect * 12 + Math.abs(Math.log(zoom));
+    if (!best || score < best.score) best = { n, score };
+  }
+  return best ? best.n : clamp(Math.round(size / t.w), 1, SNAP_MAX);
+}
+
+const tileKeys = {};   // 记住上次算推荐值时的 tile 尺寸：tile 变尺寸（如点阵开随机明度 42→504）就要重算
+
+function tilesFor(t) {
+  const key = f6(t.w) + 'x' + f6(t.h);
+  if (!state.tiles[t.id] || tileKeys[t.id] !== key) {
+    state.tiles[t.id] = defaultTiles(t);
+    tileKeys[t.id] = key;
+  }
+  return state.tiles[t.id];
+}
+
+/** 完整 N×M 个 tile 的区域 + 四周同向留白；方形 tile 的 marginX == marginY */
+function snapInfo(t, size, n) {
+  const nn = clamp(Math.round(n) || 1, 1, SNAP_MAX);
+  const m = Math.max(1, Math.round(nn * t.w / t.h));
+  const pw = nn * t.w, ph = m * t.h;
+  const mg = SNAP_MARGIN * Math.max(pw, ph);
+  const span = Math.max(pw, ph) + 2 * mg;
+  return {
+    n: nn, m, pw, ph, mg, span,
+    x0: size / 2 - span / 2,
+    patchX: size / 2 - pw / 2,
+    patchY: size / 2 - ph / 2,
+    marginX: (span - pw) / 2,
+    marginY: (span - ph) / 2,
+    zoom: size / span,
+  };
+}
+
+/** 整 tile 预览：画面中央是 N×M 个完整 tile，四周是等距背景留白 */
+function svgSnap(t, size, withBg, n) {
+  const s = snapInfo(t, size, n);
+  const bg = withBg
+    ? `<rect x="${f6(s.x0)}" y="${f6(s.x0)}" width="${f6(s.span)}" height="${f6(s.span)}" fill="${t.C.bg}"/>`
+    : '';
+  const px = ((s.patchX % t.w) + t.w) % t.w;
+  const py = ((s.patchY % t.h) + t.h) % t.h;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"`
+    + ` viewBox="${f6(s.x0)} ${f6(s.x0)} ${f6(s.span)} ${f6(s.span)}">`
+    + bg
+    + `<defs><pattern id="ttp" x="${f6(px)}" y="${f6(py)}" width="${f6(t.w)}" height="${f6(t.h)}" patternUnits="userSpaceOnUse">${t.svg}</pattern></defs>`
+    + `<rect x="${f6(s.patchX)}" y="${f6(s.patchY)}" width="${f6(s.pw)}" height="${f6(s.ph)}" fill="url(#ttp)"/></svg>`;
+}
+
+/* ============================================================
+   SVG 生成（整幅图像图案，如半调）
+   ============================================================ */
+function svgFull(t, withBg) {
+  const bg = withBg ? `<rect width="${f6(t.w)}" height="${f6(t.h)}" fill="${t.C.bg}"/>` : '';
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${f6(t.w)}" height="${f6(t.h)}"`
+    + ` viewBox="0 0 ${f6(t.w)} ${f6(t.h)}">${bg}${t.svg}</svg>`;
+}
+
+/* ============================================================
+   渲染
+   ============================================================ */
+let rafId = null;
+
+/** 分类标签：中文「科技 · TECH」/ 英文「TECH」（分类的两种写法在 CAT_META 里） */
+function catLabel(cat) {
+  const meta = CAT_META[cat];
+  if (!meta) return String(cat);
+  return LANG === 'en' ? meta.en : `${meta.name} · ${meta.en}`;
+}
+
+function render() {
+  rafId = null;
+  const pat = cur();
+  const t = tileInfo();
+  const withBg = !state.colors.transparent;
+  const isImg = !!pat.image;
+  const canvasBox = document.getElementById('canvasBox');
+  canvasBox.style.background = withBg ? state.colors.bg : '';
+  canvasBox.innerHTML = isImg
+    ? svgFull(t, withBg)
+    : svgSnap(t, state.size, withBg, tilesFor(t));
+  const si = isImg ? null : snapInfo(t, state.size, tilesFor(t));
+  document.getElementById('badge').innerHTML = `<b>${patName(pat)}</b>`
+    + `<span>${isImg ? `${f(t.w)} × ${f(t.h)}` : `${state.size} × ${state.size}`}</span>`;
+  document.getElementById('tileInfo').textContent = isImg
+    ? tf('tileInfoImg', patName(pat), f(t.w), f(t.h), clamp(Math.round(paramsOf(pat).cols), 8, 240))
+    : tf('tileInfoTile', si.n, si.m, f(t.w), f(t.h));
+  document.getElementById('curName').textContent = patName(pat);
+  document.getElementById('curCat').textContent = catLabel(pat.cat);
+  syncZoom();
+}
+
+function renderSoon() {
+  if (rafId) return;
+  rafId = requestAnimationFrame(render);
+}
+
+/** 图案参数变化后只重绘；平铺数量由用户控制，不再自动改 */
+function afterParamChange() {
+  renderSoon();
+}
+
+/* ============================================================
+   左栏：图案库
+   ============================================================ */
+function renderLib() {
+  const box = document.getElementById('libList');
+  const q = (state.query || '').trim().toLowerCase();
+  /* 搜索同时匹配中英名称与 id：中文界面里搜 hex 也能找到，反之亦然 */
+  const hit = p => !q || [p.name, patName(p), p.id, p.cat,
+    (CAT_META[p.cat] || {}).name || '', (CAT_META[p.cat] || {}).en || '']
+    .some(s => String(s).toLowerCase().includes(q));
+  const groups = [];
+  for (const p of PATTERNS) {
+    if (!hit(p)) continue;
+    let g = groups.find(x => x.name === p.cat);
+    if (!g) { g = { name: p.cat, items: [] }; groups.push(g); }
+    g.items.push(p);
+  }
+  if (!groups.length) {
+    box.innerHTML = `<div class="lib-empty">${tr('libEmpty')}</div>`;
+    return;
+  }
+  box.innerHTML = groups.map(g => {
+    const meta = CAT_META[g.name] || { no: '--', name: g.name, en: '' };
+    /* 中文：科技 · TECH；英文：TECH（右侧小字不再重复同一串英文） */
+    const catMain = LANG === 'en' ? (meta.en || meta.name) : meta.name;
+    const catTag = LANG === 'en' ? '' : meta.en;
+    return `<div class="lib-group">`
+      + `<div class="lib-cat"><span class="no">${meta.no}</span><b>${catMain}</b>`
+      + (catTag ? `<em>${catTag}</em>` : '') + `</div>`
+      + g.items.map(p =>
+        `<button type="button" class="lib-item" data-id="${p.id}" aria-current="${p.id === state.patternId}">`
+        + `<i class="dot"></i><span>${patName(p)}</span></button>`
+      ).join('')
+      + `</div>`;
+  }).join('');
+  box.querySelectorAll('.lib-item').forEach(el => {
+    el.addEventListener('click', () => selectPattern(el.dataset.id));
+  });
+}
+
+function selectPattern(id) {
+  if (!PATTERNS.some(p => p.id === id) || id === state.patternId) return;
+  state.patternId = id;
+  renderLib();
+  renderParams();
+  document.getElementById('panelR').scrollTop = 0;
+  syncZoom();
+  render();
+}
+
+/* ============================================================
+   右栏：参数（工具类 UI：标签 / ↺ / 读数右对齐）
+   ============================================================ */
+const fmtVal = (v, p) => {
+  const dec = (String(p.step).split('.')[1] || '').length;
+  return Number(v).toFixed(dec) + (p.unit || '');
+};
+
+/** 滑块已填充比例 —— --fill 是唯一的进度强调来源 */
+function paintRange(el) {
+  const min = parseFloat(el.min), max = parseFloat(el.max), v = parseFloat(el.value);
+  const p = max > min ? (v - min) / (max - min) * 100 : 0;
+  el.style.setProperty('--fill', p.toFixed(2) + '%');
+}
+
+/* ↺ 按钮的 title 随语言走：所以是函数不是常量 */
+const rvBtn = () => `<button type="button" class="rv" title="${tr('reset')}">↺</button>`;
+
+function renderParams() {
+  const pat = cur(), P = paramsOf(pat);
+  const box = document.getElementById('params');
+  box.innerHTML = '';
+
+  /* 平铺数量：从 03 预览区挪到 01 参数区顶部；图像图案不适用 */
+  if (!pat.image) {
+    const t = tileInfo();
+    const n = tilesFor(t);
+    const si = snapInfo(t, state.size, n);
+    const row = document.createElement('div');
+    row.className = 'ctl';
+    row.innerHTML = `<div class="ctl-head"><span class="k">${tr('lTiles')}</span>`
+      + `<button type="button" class="rv" id="rvTiles" title="${tr('tResetTiles')}">↺</button>`
+      + `<span class="v" id="vTiles">${si.n} × ${si.m}</span></div>`
+      + `<input type="range" id="tiles" min="1" max="${SNAP_MAX}" step="1" value="${n}" aria-label="${tr('lTiles')}">`;
+    const inp = row.querySelector('input');
+    const rv = row.querySelector('#rvTiles');
+    inp.addEventListener('input', () => setTiles(+inp.value));
+    rv.addEventListener('click', () => {
+      const tt = tileInfo();
+      state.tiles[tt.id] = defaultTiles(tt);
+      syncZoom();
+      render();
+    });
+    paintRange(inp);
+    rv.classList.toggle('at-default', n === defaultTiles(t));
+    box.appendChild(row);
+  }
+
+  for (const p of pat.params) {
+    if (p.when && !p.when(P)) continue;
+    const def = p.def;
+    const row = document.createElement('div');
+    row.className = 'ctl';
+
+    if (p.t === 'file') {
+      const img = ensureImage(pat.id);
+      row.innerHTML = `<div class="ctl-head"><span class="k">${paramLabel(pat, p)}</span>`
+        + `<button type="button" class="rv" title="${tr('tResetImg')}">↺</button>`
+        + `<span class="v" id="vImg"></span></div>`
+        + `<input type="file" accept="image/*" hidden>`
+        + `<button class="btn" type="button">${tr('btnUploadImg')}</button>`;
+      const imgName = img.name || tr('imgAvatar');
+      /* 内置默认图的名字是中文哨兵值「头像 / 示例图」，界面上按语言显示；上传的文件名原样保留 */
+      const shownName = imgName === '头像' ? tr('imgAvatar') : imgName === '示例图' ? tr('imgSample') : imgName;
+      const vImg = row.querySelector('#vImg');
+      vImg.textContent = shownName.length > 18 ? shownName.slice(0, 8) + '…' + shownName.slice(-8) : shownName;
+      vImg.title = shownName;
+      const fi = row.querySelector('input[type=file]');
+      const btn = row.querySelector('button.btn');
+      const rv = row.querySelector('.rv');
+      btn.addEventListener('click', () => fi.click());
+      fi.addEventListener('change', () => {
+        const file = fi.files && fi.files[0];
+        if (!file) return;
+        const url = URL.createObjectURL(file);
+        const im = new Image();
+        im.onload = () => {
+          const sw = 320;
+          const sh = Math.max(1, Math.round(sw * im.height / im.width));
+          const cv = document.createElement('canvas');
+          cv.width = sw; cv.height = sh;
+          const ctx = cv.getContext('2d', { willReadFrequently: true });
+          ctx.drawImage(im, 0, 0, sw, sh);
+          const data = ctx.getImageData(0, 0, sw, sh).data;
+          const lum = new Uint8ClampedArray(sw * sh);
+          for (let i = 0; i < lum.length; i++) {
+            lum[i] = Math.round(0.2126 * data[i * 4] + 0.7152 * data[i * 4 + 1] + 0.0722 * data[i * 4 + 2]);
+          }
+          URL.revokeObjectURL(url);
+          IMAGES[pat.id] = { lum, w: sw, h: sh, aspect: sh / sw, srcW: im.naturalWidth, srcH: im.naturalHeight, name: file.name };
+          renderParams();
+          syncSize();
+          render();
+        };
+        im.onerror = () => { URL.revokeObjectURL(url); toast(tr('tImgFail')); };
+        im.src = url;
+      });
+      rv.addEventListener('click', () => {
+        delete IMAGES[pat.id];
+        renderParams();
+        syncSize();
+        render();
+      });
+      box.appendChild(row);
+      continue;
+    }
+
+    if (p.t === 'range') {
+      row.innerHTML = `<div class="ctl-head"><span class="k">${paramLabel(pat, p)}</span>${rvBtn()}`
+        + `<span class="v">${fmtVal(P[p.k], p)}</span></div>`
+        + `<input type="range" min="${p.min}" max="${p.max}" step="${p.step}" value="${P[p.k]}" aria-label="${paramLabel(pat, p)}">`;
+      const inp = row.querySelector('input');
+      const vEl = row.querySelector('.v');
+      const rv = row.querySelector('.rv');
+      const sync = () => {
+        vEl.textContent = fmtVal(P[p.k], p);
+        paintRange(inp);
+        rv.classList.toggle('at-default', P[p.k] === def);
+      };
+      inp.addEventListener('input', () => {
+        P[p.k] = parseFloat(inp.value);
+        sync();
+        afterParamChange();
+      });
+      if (p.reRender) inp.addEventListener('change', () => renderParams());
+      rv.addEventListener('click', () => {
+        P[p.k] = def;
+        inp.value = String(def);
+        sync();
+        if (p.reRender) renderParams();
+        afterParamChange();
+      });
+      sync();
+
+    } else if (p.t === 'select' && p.opts.length <= 3) {
+      /* 2~3 个互斥选项 → 分段控件 */
+      row.innerHTML = `<div class="ctl-head"><span class="k">${paramLabel(pat, p)}</span>${rvBtn()}</div>`
+        + `<div class="seg" role="group" aria-label="${paramLabel(pat, p)}">`
+        + p.opts.map(([v, l]) =>
+          `<button type="button" data-val="${v}" aria-pressed="${P[p.k] === v}">${optLabel(pat, p, v, l)}</button>`
+        ).join('')
+        + `</div>`;
+      const seg = row.querySelector('.seg');
+      const rv = row.querySelector('.rv');
+      const sync = () => {
+        seg.querySelectorAll('button').forEach(b =>
+          b.setAttribute('aria-pressed', String(b.dataset.val === P[p.k])));
+        rv.classList.toggle('at-default', P[p.k] === def);
+      };
+      seg.addEventListener('click', e => {
+        const b = e.target.closest('button');
+        if (!b) return;
+        P[p.k] = b.dataset.val;
+        renderParams();
+        afterParamChange();
+      });
+      rv.addEventListener('click', () => { P[p.k] = def; renderParams(); afterParamChange(); });
+      sync();
+
+    } else if (p.t === 'select') {
+      /* ≥4 个选项 → 下拉 */
+      row.innerHTML = `<div class="ctl-head"><span class="k">${paramLabel(pat, p)}</span>${rvBtn()}</div>`
+        + `<select aria-label="${paramLabel(pat, p)}">`
+        + p.opts.map(([v, l]) => `<option value="${v}"${v === P[p.k] ? ' selected' : ''}>${optLabel(pat, p, v, l)}</option>`).join('')
+        + `</select>`;
+      const sel = row.querySelector('select');
+      const rv = row.querySelector('.rv');
+      sel.addEventListener('change', () => {
+        P[p.k] = sel.value;
+        renderParams();
+        afterParamChange();
+      });
+      rv.addEventListener('click', () => {
+        P[p.k] = def;
+        renderParams();
+        afterParamChange();
+      });
+      rv.classList.toggle('at-default', P[p.k] === def);
+
+    } else if (p.t === 'check') {
+      /* 布尔量按工具规范做成两段控件，不用开关 */
+      const [off, on] = checkPair(pat, p);
+      row.innerHTML = `<div class="ctl-head"><span class="k">${paramLabel(pat, p)}</span>${rvBtn()}</div>`
+        + `<div class="seg" role="group" aria-label="${paramLabel(pat, p)}">`
+        + `<button type="button" data-val="0" aria-pressed="${!P[p.k]}">${off}</button>`
+        + `<button type="button" data-val="1" aria-pressed="${!!P[p.k]}">${on}</button>`
+        + `</div>`;
+      const seg = row.querySelector('.seg');
+      const rv = row.querySelector('.rv');
+      const sync = () => {
+        seg.querySelectorAll('button').forEach(b =>
+          b.setAttribute('aria-pressed', String((b.dataset.val === '1') === !!P[p.k])));
+        rv.classList.toggle('at-default', !!P[p.k] === !!def);
+      };
+      seg.addEventListener('click', e => {
+        const b = e.target.closest('button');
+        if (!b) return;
+        P[p.k] = b.dataset.val === '1';
+        renderParams();
+        afterParamChange();
+      });
+      rv.addEventListener('click', () => { P[p.k] = def; renderParams(); afterParamChange(); });
+      sync();
+    }
+
+    box.appendChild(row);
+  }
+
+}
+
+/* ============================================================
+   配色 / 缩放 / 尺寸
+   ============================================================ */
+const colorKeys = { bg: 'bgColor', fg: 'fgColor' };
+const colorVals = { bg: 'vBg', fg: 'vFg' };
+const colorRvs = { bg: 'rvBg', fg: 'rvFg' };
+
+function syncColors() {
+  const c = state.colors;
+  for (const k of Object.keys(colorKeys)) {
+    document.getElementById(colorKeys[k]).value = c[k];
+    document.getElementById(colorVals[k]).textContent = c[k].toUpperCase();
+    document.getElementById(colorRvs[k]).classList.toggle('at-default', c[k] === DEFAULTS.colors[k]);
+  }
+  document.querySelectorAll('#segTrans button').forEach(b =>
+    b.setAttribute('aria-pressed', String((b.dataset.val === '1') === !!c.transparent)));
+  document.getElementById('rvTrans').classList.toggle('at-default', !c.transparent);
+}
+
+function setColor(k, v) {
+  state.colors[k] = v;
+  document.getElementById(colorVals[k]).textContent = v.toUpperCase();
+  document.getElementById(colorRvs[k]).classList.toggle('at-default', v === DEFAULTS.colors[k]);
+  renderSoon();
+}
+
+function syncZoom() {
+  const pat = cur();
+  if (!pat.image) {
+    const t = tileInfo();
+    const n = tilesFor(t);
+    const si = snapInfo(t, state.size, n);
+    const tileEl = document.getElementById('tiles');
+    if (tileEl) {
+      tileEl.value = String(n);
+      paintRange(tileEl);
+      document.getElementById('vTiles').textContent = `${si.n} × ${si.m}`;
+      document.getElementById('rvTiles').classList.toggle('at-default', n === defaultTiles(t));
+    }
+  }
+  syncSize();
+}
+
+function syncSize() {
+  const pat = cur();
+  const img = pat.image ? ensureImage(pat.id) : null;
+  const aspect = img ? img.aspect : 1;
+  const sel = document.getElementById('sizeSel');
+  for (const opt of sel.options) {
+    const sz = +opt.value;
+    opt.textContent = pat.image
+      ? `${sz} × ${Math.max(1, Math.round(sz * aspect))}`
+      : `${sz}`;
+  }
+  sel.value = String(state.size);
+  const d = exportDims();
+  document.getElementById('vSize').textContent = `${state.size} → ${d.w} × ${d.h}`;
+  document.getElementById('vSize').title = pat.image ? tr('tSizeTitleImg') : tr('tSizeTitleTile');
+  document.getElementById('rvSize').classList.toggle('at-default', state.size === DEFAULTS.size);
+}
+
+function setTiles(n) {
+  const t = tileInfo();
+  const v = clamp(Math.round(n) || 1, 1, SNAP_MAX);
+  if (state.tiles[t.id] === v) return;
+  state.tiles[t.id] = v;
+  syncZoom();
+  renderSoon();
+}
+
+function resetAllParams() {
+  const pat = cur();
+  state.params[pat.id] = {};
+  for (const p of pat.params) state.params[pat.id][p.k] = p.def;
+  if (pat.image) {
+    delete IMAGES[pat.id];
+  } else {
+    const t = tileFor(pat.id);
+    state.tiles[pat.id] = defaultTiles(t);
+  }
+  renderParams();
+  syncSize();
+  render();
+  toast(tr('tResetDone'));
+}
+
+/* ============================================================
+   面板收起 / 偏好
+   ============================================================ */
+const PREF_KEY = 'ttl.prefs.v1';
+
+function savePrefs() {
+  try {
+    const groups = {};
+    document.querySelectorAll('.group[data-g]').forEach(d => {
+      groups[d.dataset.g] = d.open;
+    });
+    localStorage.setItem(PREF_KEY, JSON.stringify({ panels: state.panels, groups }));
+  } catch (e) { /* 隐私模式下忽略 */ }
+}
+
+function loadPrefs() {
+  try {
+    const raw = localStorage.getItem(PREF_KEY);
+    if (!raw) return;
+    const p = JSON.parse(raw);
+    if (typeof p.panels === 'boolean') state.panels = p.panels;
+    if (p.groups) {
+      document.querySelectorAll('.group[data-g]').forEach(d => {
+        if (typeof p.groups[d.dataset.g] === 'boolean') d.open = p.groups[d.dataset.g];
+      });
+    }
+  } catch (e) { /* 忽略损坏的偏好 */ }
+}
+
+function setPanels(on) {
+  state.panels = on;
+  document.body.classList.toggle('panels-hidden', !on);
+  document.getElementById('toggleBtn').classList.toggle('show', !on);
+  savePrefs();
+}
+
+/* ============================================================
+   导出
+   ============================================================ */
+function download(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+let toastTimer = null;
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('on'), 1900);
+}
+
+const baseName = (d) => `texture-${state.patternId}-${d.w}x${d.h}`;
+
+/** 导出布局：整数个完整 tile（边界 = 预览里的 tile 边界；边上被切一半的点与预览一致）。
+ *  返回 tile 数 n×m、用户单位尺寸 pw/ph 与像素尺寸（取整）。 */
+function exportLayout(t) {
+  const n = tilesFor(t);
+  const si = snapInfo(t, state.size, n);
+  /* 与预览同一缩放：预览里可见的 tile 区域按画布缩放比例落到导出像素。
+     导出尺寸因此略小于所选尺寸（方形 tile 约 0.943 倍 = 去掉预览四周 3% 留白），
+     但边界严格落在 tile 边界上。 */
+  const k = state.size / si.span;
+  return {
+    n: si.n, m: si.m, pw: si.pw, ph: si.ph,
+    w: Math.max(1, Math.round(si.pw * k)), h: Math.max(1, Math.round(si.ph * k)),
+  };
+}
+
+function exportDims() {
+  const pat = cur();
+  const t = tileInfo();
+  if (pat.image) return { w: Math.max(1, Math.round(t.w)), h: Math.max(1, Math.round(t.h)) };
+  const L = exportLayout(t);
+  return { w: L.w, h: L.h };
+}
+
+/** 导出用 SVG：整 tile 区域（整数个完整 tile），平铺用 <defs><g id> + <use> + <clipPath>。
+ *  不用 <pattern>：Affinity 导入 <pattern> 填充会丢失（导出的 SVG 打开是空白的），
+ *  <use> + <clipPath> 实测能正确还原；每个 tile 单独裁切 = 与浏览器 <pattern> 的
+ *  「tile 内裁切」语义一致，半透明元素（随机明度点阵）在 tile 接缝处不会被重复叠色。
+ *  像素尺寸取整后 width/height 与 viewBox 只有 <0.5px 量级缩放，平铺仍严格按整 tile 对齐。 */
+function buildExportSVG(withBg) {
+  const pat = cur();
+  const t = tileInfo();
+  if (pat.image) return svgFull(t, withBg);
+  const L = exportLayout(t);
+  /* 背景必须铺满 viewBox（viewBox 是 tile 对齐后的 L.pw × L.ph），
+     不能拿取整后的像素尺寸 L.w / L.h：两者不相等（导出尺寸通常略小于拼贴跨度，
+     见 exportLayout 里的 k），用 L.w 会在右侧/底部留下透明边 —— 在查看器里
+     看起来就是「一块黑色方块底，没铺满整张图」。 */
+  const bg = withBg
+    ? `<rect width="${f6(L.pw)}" height="${f6(L.ph)}" fill="${t.C.bg}"/>`
+    : '';
+  let tiles = '';
+  for (let j = 0; j < L.m; j++) {
+    for (let i = 0; i < L.n; i++) {
+      tiles += `<g transform="translate(${f6(i * t.w)} ${f6(j * t.h)})">`
+        + `<g clip-path="url(#ttc)"><use href="#tt"/></g></g>`;
+    }
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${L.w}" height="${L.h}"`
+    + ` viewBox="0 0 ${f6(L.pw)} ${f6(L.ph)}">`
+    + bg
+    + `<defs><g id="tt">${t.svg}</g>`
+    + `<clipPath id="ttc"><rect width="${f6(t.w)}" height="${f6(t.h)}"/></clipPath></defs>`
+    + tiles + '</svg>';
+}
+
+function exportSVG() {
+  const withBg = !state.colors.transparent;
+  const svg = buildExportSVG(withBg);
+  const d = exportDims();
+  download(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }), baseName(d) + '.svg');
+  toast(tf('tSvgDone', d.w, d.h));
+}
+
+function exportPNG() {
+  const withBg = !state.colors.transparent;
+  const svg = buildExportSVG(withBg);
+  const d = exportDims();
+  const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
+  const img = new Image();
+  img.onload = () => {
+    const cv = document.createElement('canvas');
+    cv.width = d.w; cv.height = d.h;
+    const ctx = cv.getContext('2d');
+    ctx.drawImage(img, 0, 0, d.w, d.h);
+    URL.revokeObjectURL(url);
+    cv.toBlob(b => {
+      if (!b) { toast(tr('tExportFail')); return; }
+      download(b, baseName(d) + '.png');
+      toast(tf('tPngDone', d.w, d.h));
+    }, 'image/png');
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); toast(tr('tRasterFail')); };
+  img.src = url;
+}
+
+/* ============================================================
+   语言切换
+   ============================================================ */
+function syncLangSeg() {
+  const seg = document.getElementById('segLang');
+  if (!seg) return;
+  Array.from(seg.children).forEach(b => {
+    const on = b.dataset.val === LANG;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+}
+
+/** 只换静态文案（四通道）＋ 标题 / html lang / 段控；不碰画面与动态读数 */
+function applyLangStatic() {
+  document.documentElement.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.title = tr('docTitle');
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = tr(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = tr(el.dataset.i18nTitle); });
+  document.querySelectorAll('[data-i18n-aria]').forEach(el => { el.setAttribute('aria-label', tr(el.dataset.i18nAria)); });
+  document.querySelectorAll('[data-i18n-ph]').forEach(el => { el.setAttribute('placeholder', tr(el.dataset.i18nPh)); });
+  const sel = document.getElementById('lang');
+  if (sel && sel.value !== LANG) sel.value = LANG;
+  syncLangSeg();
+}
+
+/* 切语言后要重算的「动态文案」：图案库、参数面板、画布信息与尺寸说明 */
+function refreshI18NText() {
+  renderLib();
+  renderParams();
+  render();          // render() 末尾会调 syncZoom() → syncSize()
+}
+
+function applyLang(lang, persist) {
+  LANG = I18N[lang] ? lang : 'zh';
+  applyLangStatic();
+  refreshI18NText();
+  if (persist !== false) { try { localStorage.setItem('ttl.lang', LANG); } catch (e) { /* 隐私模式下忽略 */ } }
+}
+
+/* 分段控件：与其它工具同一个 bindSeg —— 点击写回隐藏的 select 并派发 change，
+   既有逻辑与自动化测试钩子保持不变 */
+function bindSeg(segId, selId) {
+  const seg = document.getElementById(segId), sel = document.getElementById(selId);
+  if (!seg || !sel) return;
+  const sync = () => Array.from(seg.children).forEach(b => {
+    const on = b.dataset.val === sel.value;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  seg.addEventListener('click', e => {
+    const b = e.target.closest('button[data-val]');
+    if (!b || sel.disabled || sel.value === b.dataset.val) return;
+    sel.value = b.dataset.val;
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    sync();
+  });
+  sel.addEventListener('change', sync);
+  sync();
+}
+
+/* ============================================================
+   初始化
+   ============================================================ */
+function init() {
+  /* URL 直达：?p=dot-grid&size=2048&zoom=200 （zoom 按百分比） */
+  const qp = new URLSearchParams(location.search);
+  const pid = qp.get('p');
+  if (pid && PATTERNS.some(p => p.id === pid)) state.patternId = pid;
+  const qs = parseInt(qp.get('size'), 10);
+  if (SIZES.includes(qs)) state.size = qs;
+
+  loadPrefs();
+
+  /* ---- 语言（中 / EN）：偏好已在脚本顶部读入 LANG，先把静态文案落地 ---- */
+  bindSeg('segLang', 'lang');
+  document.getElementById('lang').addEventListener('change', e => applyLang(e.target.value));
+  applyLangStatic();
+
+  renderLib();
+  renderParams();
+  syncColors();
+  syncZoom();
+  syncSize();
+  setPanels(state.panels);
+  render();
+
+  /* 默认图（内嵌头像）解码是异步的：解完刷新一次；若打开时就在半调（?p=halftone）直接就位 */
+  loadDefaultImages().then(() => {
+    if (cur().image) { renderParams(); syncSize(); render(); }
+  });
+
+  /* ---- 取色 ---- */
+  for (const k of Object.keys(colorKeys)) {
+    document.getElementById(colorKeys[k]).addEventListener('input', e => setColor(k, e.target.value));
+    document.getElementById(colorRvs[k]).addEventListener('click', () => {
+      setColor(k, DEFAULTS.colors[k]);
+      document.getElementById(colorKeys[k]).value = DEFAULTS.colors[k];
+    });
+  }
+  document.getElementById('segTrans').addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    state.colors.transparent = b.dataset.val === '1';
+    syncColors();
+    render();
+  });
+  document.getElementById('rvTrans').addEventListener('click', () => {
+    state.colors.transparent = false;
+    syncColors();
+    render();
+  });
+
+  /* ---- 平铺数量：滚轮 ±1（图像图案不适用） ---- */
+  document.getElementById('stage').addEventListener('wheel', e => {
+    if (cur().image) return;
+    e.preventDefault();
+    setTiles(tilesFor(tileInfo()) + (e.deltaY < 0 ? -1 : 1));
+  }, { passive: false });
+
+  /* ---- 尺寸 ---- */
+  document.getElementById('sizeSel').addEventListener('change', e => {
+    state.size = +e.target.value;
+    syncSize();
+    syncZoom();
+    render();
+  });
+  document.getElementById('rvSize').addEventListener('click', () => {
+    state.size = DEFAULTS.size;
+    syncSize();
+    syncZoom();
+    render();
+  });
+
+  /* ---- 搜索 ---- */
+  document.getElementById('libSearch').addEventListener('input', e => {
+    state.query = e.target.value;
+    renderLib();
+  });
+
+  /* ---- 面板 ---- */
+  document.getElementById('hidePanels').addEventListener('click', () => setPanels(false));
+  document.getElementById('toggleBtn').addEventListener('click', () => setPanels(true));
+  document.getElementById('resetAll').addEventListener('click', resetAllParams);
+  document.querySelectorAll('.group[data-g]').forEach(d => {
+    d.addEventListener('toggle', savePrefs);
+  });
+
+  /* ---- 键盘：H 面板 / 0 复位平铺 / +- 平铺 ---- */
+  window.addEventListener('keydown', e => {
+    const tag = ((e.target && e.target.tagName) || '').toLowerCase();
+    if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key;
+    if (k.toLowerCase() === 'h') { e.preventDefault(); setPanels(!state.panels); return; }
+    if (cur().image) return;
+    if (k === '0') {
+      e.preventDefault();
+      const t = tileInfo();
+      state.tiles[t.id] = defaultTiles(t);
+      syncZoom();
+      render();
+    } else if (k === '+' || k === '=') {
+      e.preventDefault();
+      setTiles(tilesFor(tileInfo()) - 1);
+    } else if (k === '-' || k === '_') {
+      e.preventDefault();
+      setTiles(tilesFor(tileInfo()) + 1);
+    }
+  });
+
+  /* ---- 导出 ---- */
+  document.getElementById('expSvg').addEventListener('click', exportSVG);
+  document.getElementById('expPng').addEventListener('click', exportPNG);
+
+  /* 测试 / 二次开发用的只读入口（不参与界面逻辑） */
+  window.__ttl = {
+    ready: true,
+    state,
+    PATTERNS,
+    DEFAULTS,
+    IMAGES,
+    paramsOf,
+    tileFor,
+    tileInfo,
+    svgSnap,
+    svgFull,
+    snapInfo,
+    defaultTiles,
+    tilesFor,
+    setTiles,
+    buildExportSVG,
+    exportLayout,
+    exportDims,
+    ensureImage,
+    makeSampleImage,
+    sampleImage,
+    selectPattern,
+    setPanels,
+    /* 语言测试钩子（.test/pup/i18n_verify.mjs 用） */
+    LANG: () => LANG,
+    setLang: lang => applyLang(lang),
+    I18N, PAT_I18N,
+    patName, paramLabel, checkPair,
+  };
+}
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+# ---- 操作系统噪音 ----
+.DS_Store
+
+# ---- 本地备份副本（改动前的自动副本，不属于项目内容）----
+*.auto-backup-*
+
+# ---- 内部开发记录（各轮改动 / 验收数据 / 踩坑，作者未选择公开）----
+DEVLOG.md
+
+# ---- 本机验收脚本与调试截图（作者未选择公开）----
+.test/
+probe.js
+analyze.py
+verify.py
+verify_tiling.py
+
+# ---- 参考图（来路与版权不明，不公开）----
+reference/
+
+# ---- 设计源文件与原始素材（默认图已经内嵌进 index.html）----
+*.afdesign
+*.afdesign~lock~
+头像.png
+
+# ---- 本地启动脚本（用于起本地服务，公开版直接双击 index.html 即可）----
+start.command
+
+# ---- 内部研究文档 ----
+RESEARCH.md
+
+# ---- 与本工具无关的旧实验目录 ----
+webgpu-vs-webgl/
