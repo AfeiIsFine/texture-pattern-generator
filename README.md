@@ -22,7 +22,7 @@
 
 | 方式 | 怎么做 | 适合 |
 |---|---|---|
-| **单文件版** | 下载 [`index.html`](index.html)，双击打开 | 发给别人 / 离线用；整个工具就一个文件，不需要服务器、不需要联网 |
+| **单文件版** | 下载 [`index.html`](index.html) 双击打开；想用更干净的文件名，也可以从 [Releases](https://github.com/AfeiIsFine/texture-pattern-generator/releases/latest) 下载 `texture-pattern-generator.html`（同一份文件） | 发给别人 / 离线用；整个工具就一个文件，不需要服务器、不需要联网 |
 | **在线版** | 打开 <https://afeiisfine.github.io/texture-pattern-generator/> | 不下载，直接看效果 |
 
 两种方式用的是同一份文件 —— 本工具没有构建步骤，`index.html` 里就是全部代码（内嵌默认示例图），改完刷新即可。

@@ -22,7 +22,7 @@ This tool is deliberately about **vector + live parameters + seamless tiling** �
 
 | Way | How | Good for |
 |---|---|---|
-| **Single file** | Download [`index.html`](index.html) and double-click it | Sharing / offline use — one file, no server, no network |
+| **Single file** | Download [`index.html`](index.html) and double-click it — or grab `texture-pattern-generator.html` from [Releases](https://github.com/AfeiIsFine/texture-pattern-generator/releases/latest) (same file, friendlier name) | Sharing / offline use — one file, no server, no network |
 | **Online** | Open <https://afeiisfine.github.io/texture-pattern-generator/> | Just see it, no download |
 
 Both use the same file — there is no build step; `index.html` contains all the code (including the embedded default sample image).
